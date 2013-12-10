@@ -5,6 +5,11 @@
 #include <openssl/opensslv.h>
 #include <openssl/err.h>
 #include <openssl/crypto.h>
+#include <openssl/safestack.h>
+#include <openssl/objects.h>
+#include <openssl/x509.h>
+#include <openssl/x509v3.h>
+#include <openssl/evp.h>
 
 #include "ssl_dane.h"
 
@@ -76,55 +81,13 @@ static ERR_STRING_DATA dane_str_reasons[] = {
 #define DANEerr(f, r) ERR_PUT_error(err_lib_dane, (f), (r), __FILE__, __LINE__)
 
 static int err_lib_dane = -1;
+static int dane_idx = -1;
 
-static void load_dane_strings(void) {
-#ifndef OPENSSL_NO_ERR
-    if (err_lib_dane > 0) {
-	if (ERR_func_error_string(dane_str_functs[0].error))
-	    return;
-	ERR_load_strings(err_lib_dane, dane_str_functs);
-	ERR_load_strings(err_lib_dane, dane_str_reasons);
-    }
+#ifdef X509_V_FLAG_PARTIAL_CHAIN       /* OpenSSL >= 1.0.2 */
+static int wrap_self_issued = 0;
+#else
+static int wrap_self_issued = 1;
 #endif
-}
-
-static int safe_init(
-	volatile int *value,
-	int (*init)(void),
-	void (*postinit)(void)
-)
-{
-    int wlock = 0;
-
-    CRYPTO_r_lock(CRYPTO_LOCK_SSL_CTX);
-    if (*value < 0) {
-	CRYPTO_r_unlock(CRYPTO_LOCK_SSL_CTX);
-	CRYPTO_w_lock(CRYPTO_LOCK_SSL_CTX);
-	wlock = 1;
-	if (*value < 0) {
-	    *value = init();
-	    if (postinit)
-		postinit();
-	}
-    }
-    if (wlock)
-	CRYPTO_w_unlock(CRYPTO_LOCK_SSL_CTX);
-    else
-	CRYPTO_r_unlock(CRYPTO_LOCK_SSL_CTX);
-    return *value;
-}
-
-#undef SIGN_SUPPORT
-#if OPENSSL_VERSION_NUMBER >= 0x1000000fL && \
-	(defined(X509_V_FLAG_PARTIAL_CHAIN) || !defined(OPENSSL_NO_ECDH))
-#define SIGN_SUPPORT
-#endif
-
-#include <openssl/safestack.h>
-#include <openssl/objects.h>
-#include <openssl/x509.h>
-#include <openssl/x509v3.h>
-#include <openssl/evp.h>
 
 static void (*cert_free)(void *) = (void (*)(void *)) X509_free;
 static void (*pkey_free)(void *) = (void (*)(void *)) EVP_PKEY_free;
@@ -199,76 +162,6 @@ typedef struct SSL_DANE {
 #ifndef X509_V_ERR_HOSTNAME_MISMATCH
 #define X509_V_ERR_HOSTNAME_MISMATCH X509_V_ERR_APPLICATION_VERIFICATION
 #endif
-
-static int dane_idx = -1;
-static EVP_PKEY *signkey;
-static const EVP_MD *signmd;
-
-#undef WRAP_SIGNED
-#ifdef X509_V_FLAG_PARTIAL_CHAIN	/* OpenSSL >= 1.0.2 */
-static int wrap_signed = 0;
-#else
-#define WRAP_SIGNED
-static int wrap_signed = 1;
-#endif
-
-#if defined(WRAP_SIGNED) && defined(SIGN_SUPPORT)
-static EVP_PKEY *gensignkey(void)
-{
-    EVP_PKEY *key = 0;
-
-    EC_KEY *eckey;
-    EC_GROUP *group = 0;
-
-    ERR_clear_error();
-
-    if ((eckey = EC_KEY_new()) != 0
-	&& (group = EC_GROUP_new_by_curve_name(NID_X9_62_prime256v1)) != 0
-	&& (EC_GROUP_set_asn1_flag(group, OPENSSL_EC_NAMED_CURVE),
-	    EC_KEY_set_group(eckey, group))
-	&& EC_KEY_generate_key(eckey)
-	&& (key = EVP_PKEY_new()) != 0
-	&& !EVP_PKEY_set1_EC_KEY(key, eckey)) {
-	EVP_PKEY_free(key);
-	key = 0;
-    }
-    if (group)
-	EC_GROUP_free(group);
-    if (eckey)
-	EC_KEY_free(eckey);
-    return (key);
-}
-#endif
-
-static void dane_init(void)
-{
-#if defined(WRAP_SIGNED) && defined(SIGN_SUPPORT)
-    /*
-     * Initialize the signature algorithm and signing key for releases in
-     * which trust-anchors must be self-signed and thus intermediate
-     * trust-anchors need to be dynamically signed by an internal root CA.
-     */
-    if (signmd == 0)
-	signmd = EVP_get_digestbyname(LN_sha256);
-    if (signkey == 0)
-	signkey = gensignkey();
-#endif
-
-    /*
-     * Store library id in zeroth function slot, used to locate the library
-     * name.  This must be done before we load the error strings.
-     */
-    dane_str_functs[0].error |= ERR_PACK(err_lib_dane, 0, 0);
-    load_dane_strings();
-
-    /*
-     * Register an SSL index for the connection-specific SSL_DANE structure.
-     * Using a separate index makes it possible to add DANE support to
-     * existing OpenSSL releases that don't have a suitable pointer in the
-     * SSL structure.
-     */
-    dane_idx = SSL_get_ex_new_index(0, 0, 0, 0, 0);
-}
 
 static int match(
 	DANE_SELECTOR_LIST slist,
@@ -521,15 +414,15 @@ static int grow_chain(STACK_OF(X509) **skptr, X509 *cert, int add_trust)
     return 1;
 }
 
-static int wrap_key(
+static int wrap_issuer(
 	SSL_DANE *dane,
-	int depth,
 	EVP_PKEY *key,
-	X509 *subject
+	X509 *subject,
+	int depth,
+	int recurse
 )
 {
     int ret = 1;
-    int selfsigned = 0;
     X509 *cert = 0;
     AUTHORITY_KEYID *akid;
     X509_NAME *name = X509_get_issuer_name(subject);
@@ -542,8 +435,8 @@ static int wrap_key(
 	dane->depth = depth + 1;
 
     /*
-     * If key is NULL generate a self-signed root CA, with key "signkey",
-     * otherwise an intermediate CA signed by above.
+     * If key is NULL generate a self-issued root CA, otherwise an
+     * intermediate CA and a self-signed issuer.
      */
     if ((cert = X509_new()) == 0)
 	return 0;
@@ -559,7 +452,7 @@ static int wrap_key(
     /* XXX: Should we peek at the error stack here??? */
     if ((akid_name = akid_issuer_name(akid)) == 0
 	|| X509_NAME_cmp(name, akid_name) == 0)
-	selfsigned = 1;
+	recurse = 0;
 
     /* CA cert valid for +/- 30 days */
     if (!X509_set_version(cert, 2)
@@ -568,20 +461,18 @@ static int wrap_key(
 	|| !set_issuer_name(cert, akid)
 	|| !X509_gmtime_adj(X509_get_notBefore(cert), -30 * 86400L)
 	|| !X509_gmtime_adj(X509_get_notAfter(cert), 30 * 86400L)
-	|| !X509_set_pubkey(cert, key ? key : signkey)
+	|| !X509_set_pubkey(cert, key ? key : X509_get_pubkey(subject))
 	|| !add_ext(0, cert, NID_basic_constraints, "CA:TRUE")
-	|| (key && !selfsigned && !add_akid(cert, akid))
+	|| (recurse && !add_akid(cert, akid))
 	|| !add_skid(cert, akid)
-	|| (wrap_signed
-	    && (!X509_sign(cert, signkey, signmd)
-		|| (key && !selfsigned
-		    && !wrap_key(dane, depth + 1, 0, cert))))) {
+	|| (recurse && wrap_self_issued &&
+	    !wrap_issuer(dane, 0, cert, depth, 0))) {
 	ret = 0;
     }
     if (akid)
 	AUTHORITY_KEYID_free(akid);
     if (ret) {
-	if (key && !selfsigned && wrap_signed)
+	if (recurse && wrap_self_issued)
 	    ret = grow_chain(&dane->chain, cert, 0);
 	else
 	    ret = grow_chain(&dane->roots, cert, 1);
@@ -594,55 +485,20 @@ static int wrap_key(
 static int wrap_cert(
 	SSL_DANE *dane,
 	int depth,
-	X509 *tacert,
-	X509 *subject
+	X509 *tacert
 )
 {
-    int ret = 1;
-    X509 *cert;
-    int len;
-    unsigned char *asn1;
-    unsigned char *buf;
-
     dane->depth = depth;
 
     /*
-     * If the TA certificate is self-issued, use it directly.
+     * If the TA certificate is self-issued, or need not be, use it directly.
+     * Otherwise, synthesize requisuite ancestors.
      */
-    if (!wrap_signed
+    if (!wrap_self_issued
 	|| X509_check_issued(tacert, tacert) == X509_V_OK)
 	return grow_chain(&dane->roots, tacert, 1);
-
-    /* Deep-copy tacert by converting to ASN.1 and back */
-    len = i2d_X509(tacert, NULL);
-    asn1 = buf = (unsigned char *) OPENSSL_malloc(len);
-    if (!buf) {
-	DANEerr(DANE_F_WRAP_CERT, ERR_R_MALLOC_FAILURE);
-	return 0;
-    }
-    i2d_X509(tacert, &buf);
-    OPENSSL_assert(buf - asn1 == len);
-
-    buf = asn1;
-    cert = d2i_X509(0, (unsigned const char **) &buf, len);
-    if (!cert) {
-	OPENSSL_free(asn1);
-	return 0;
-    }
-    OPENSSL_assert(buf - asn1 == len);
-    OPENSSL_free(asn1);
-
-    if (!grow_chain(&dane->chain, cert, 0)) {
-	X509_free(cert);
-	return 0;
-    }
-
-    /* Sign and wrap TA cert with internal "signkey" */
-    if (!X509_sign(cert, signkey, signmd)
-	|| !wrap_key(dane, depth + 1, signkey, cert))
-	ret = 0;
-    X509_free(cert);
-    return ret;
+    return (grow_chain(&dane->chain, tacert, 0) &&
+	    wrap_issuer(dane, 0, tacert, depth, 1));
 }
 
 static int ta_signed(
@@ -675,7 +531,7 @@ static int ta_signed(
 	    }
 	    /* Check signature, since some other TA may work if not this. */
 	    if (X509_verify(cert, pk) > 0)
-		done = wrap_cert(dane, depth + 1, x->value, cert) ? 1 : -1;
+		done = wrap_cert(dane, depth + 1, x->value) ? 1 : -1;
 	    EVP_PKEY_free(pk);
 	}
     }
@@ -699,7 +555,7 @@ static int ta_signed(
      */
     for (k = dane->pkeys; !done && k; k = k->next)
 	if (X509_verify(cert, k->value) > 0)
-	    done = wrap_key(dane, depth, k->value, cert) ? 1 : -1;
+	    done = wrap_issuer(dane, k->value, cert, depth, 1) ? 1 : -1;
 
     return done;
 }
@@ -772,11 +628,11 @@ static int set_trust_anchor(
 	    } else
 		matched = -1;
 	} else if (matched == MATCHED_CERT) {
-	    if (!wrap_cert(dane, depth, ca, cert))
+	    if (!wrap_cert(dane, depth, ca))
 		matched = -1;
 	} else if (matched == MATCHED_PKEY) {
 	    if ((takey = X509_get_pubkey(ca)) == 0 ||
-		!wrap_key(dane, depth, takey, cert)) {
+		!wrap_issuer(dane, takey, cert, depth, 1)) {
 		if (takey)
 		    EVP_PKEY_free(takey);
 		else
@@ -987,6 +843,7 @@ static int verify_chain(X509_STORE_CTX *ctx)
     SSL_DANE *dane = SSL_get_ex_data(ssl, dane_idx);
     X509 *cert = ctx->cert;		/* XXX: accessor? */
     int matched = 0;
+    int chain_length = sk_X509_num(ctx->chain);
 
     /*
      * Satisfy at least one usage 0 or 1 constraint, unless we've already
@@ -995,7 +852,6 @@ static int verify_chain(X509_STORE_CTX *ctx)
     if (!dane->roots) {
 	DANE_SELECTOR_LIST issuer_rrs;
 	DANE_SELECTOR_LIST leaf_rrs;
-	int chain_length = sk_X509_num(ctx->chain);
 	int n;
 
 	issuer_rrs = dane->selectors[SSL_DANE_USAGE_LIMIT_ISSUER];
@@ -1014,11 +870,16 @@ static int verify_chain(X509_STORE_CTX *ctx)
 	    return 0;
 
 	if (!matched) {
-	    ctx->error_depth = chain_length - 1;
+	    ctx->current_cert = cert;
+	    ctx->error_depth = 0;
 	    X509_STORE_CTX_set_error(ctx, X509_V_ERR_CERT_UNTRUSTED);
 	    if (!cb(0, ctx))
 		return 0;
 	}
+    } else {
+	/* Pop synthetic trust-anchor ancestors off the chain! */
+	while (--chain_length > dane->depth)
+	    X509_free(sk_X509_pop(ctx->chain));
     }
 
     if ((matched = name_check(dane, cert)) < 0)
@@ -1026,6 +887,7 @@ static int verify_chain(X509_STORE_CTX *ctx)
 
     if (!matched) {
 	ctx->error_depth = 0;
+	ctx->current_cert = cert;
 	X509_STORE_CTX_set_error(ctx, X509_V_ERR_HOSTNAME_MISMATCH);
 	if (!cb(0, ctx))
 	    return 0;
@@ -1057,6 +919,7 @@ static int verify_cert(X509_STORE_CTX *ctx, void *unused_ctx)
     if (dane->selectors[SSL_DANE_USAGE_FIXED_LEAF]) {
 	if ((matched = check_end_entity(ctx, dane, cert)) > 0) {
 	    ctx->error_depth = 0;
+	    ctx->current_cert = cert;
 	    return cb(1, ctx);
 	}
 	if (matched < 0)
@@ -1208,11 +1071,6 @@ int SSL_dane_add_tlsa(
 	return 0;
     }
 
-    if (usage == SSL_DANE_USAGE_TRUSTED_CA && wrap_signed && !signkey) {
-	DANEerr(DANE_F_SSL_DANE_ADD_TLSA, DANE_R_NOSIGN_KEY);
-	return 0;
-    }
-
     if (mdname == 0) {
 	X509 *x = 0;
 	EVP_PKEY *k = 0;
@@ -1326,8 +1184,11 @@ int SSL_dane_init(SSL *ssl, const char *sni_domain, const char **hostnames)
     }
 #endif
 
-    if (sni_domain && !SSL_set_tlsext_host_name(ssl, sni_domain))
-	return 0;
+    /* Client-side SNI requires SSLv3 or better */
+    if (sni_domain)
+	if (!SSL_set_tlsext_host_name(ssl, sni_domain) ||
+	    !(SSL_set_options(ssl, SSL_OP_NO_SSLv2) & SSL_OP_NO_SSLv2))
+	    return 0;
 
     if ((dane = (SSL_DANE *) OPENSSL_malloc(sizeof(SSL_DANE))) == 0) {
 	DANEerr(DANE_F_SSL_DANE_INIT, ERR_R_MALLOC_FAILURE);
@@ -1369,16 +1230,60 @@ int SSL_CTX_dane_init(SSL_CTX *ctx)
     return -1;
 }
 
+static int init_once(
+	volatile int *value,
+	int (*init)(void),
+	void (*postinit)(void)
+)
+{
+    int wlock = 0;
+
+    CRYPTO_r_lock(CRYPTO_LOCK_SSL_CTX);
+    if (*value < 0) {
+	CRYPTO_r_unlock(CRYPTO_LOCK_SSL_CTX);
+	CRYPTO_w_lock(CRYPTO_LOCK_SSL_CTX);
+	wlock = 1;
+	if (*value < 0) {
+	    *value = init();
+	    if (postinit)
+		postinit();
+	}
+    }
+    if (wlock)
+	CRYPTO_w_unlock(CRYPTO_LOCK_SSL_CTX);
+    else
+	CRYPTO_r_unlock(CRYPTO_LOCK_SSL_CTX);
+    return *value;
+}
+
+static void dane_init(void)
+{
+    /*
+     * Store library id in zeroth function slot, used to locate the library
+     * name.  This must be done before we load the error strings.
+     */
+#ifndef OPENSSL_NO_ERR
+    dane_str_functs[0].error |= ERR_PACK(err_lib_dane, 0, 0);
+    ERR_load_strings(err_lib_dane, dane_str_functs);
+    ERR_load_strings(err_lib_dane, dane_str_reasons);
+#endif
+
+    /*
+     * Register an SSL index for the connection-specific SSL_DANE structure.
+     * Using a separate index makes it possible to add DANE support to
+     * existing OpenSSL releases that don't have a suitable pointer in the
+     * SSL structure.
+     */
+    dane_idx = SSL_get_ex_new_index(0, 0, 0, 0, 0);
+}
+
 int SSL_dane_library_init(void)
 {
     if (err_lib_dane < 0)
-	safe_init(&err_lib_dane, ERR_get_next_error_library, dane_init);
+	init_once(&err_lib_dane, ERR_get_next_error_library, dane_init);
 
-    if (dane_idx >= 0) {
-	if (!wrap_signed || (signmd && signkey))
-	    return 1;			/* Full DANE support */
-	return 0;			/* DANE usage 2 unavailable */
-    }
+    if (dane_idx >= 0)
+	return 1;
     DANEerr(DANE_F_SSL_DANE_LIBRARY_INIT, DANE_R_DANE_SUPPORT);
-    return -1;				/* No DANE support. */
+    return 0;
 }

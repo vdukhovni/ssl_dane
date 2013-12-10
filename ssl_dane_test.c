@@ -32,38 +32,36 @@ void    print_errors(void)
     }
 }
 
-static int cert_digest(
-    const char *argv[],
-    unsigned char *mdbuf,
-    unsigned int *mdlen,
-    uint8_t *usage,
-    uint8_t *selector
-)
+static int add_tlsa(SSL *ssl, const char *argv[])
 {
-    const EVP_MD *md;
+    const EVP_MD *md = 0;
+    unsigned char mdbuf[EVP_MAX_MD_SIZE];
+    unsigned int mdlen;
+    const unsigned char *tlsa_data;
     X509 *cert = 0;
     BIO *bp;
     unsigned char *buf;
     unsigned char *buf2;
     int len;
-
-    *usage = atoi(argv[1]);
-    *selector = atoi(argv[2]);
+    uint8_t u = atoi(argv[1]);
+    uint8_t s = atoi(argv[2]);
+    const char *mdname = *argv[3] ? argv[3] : 0;
+    int ret = 0;
 
     if ((bp = BIO_new_file(argv[4], "r")) == NULL) {
 	fprintf(stderr, "error opening %s: %m", argv[4]);
-	return (0);
+	return 0;
     }
     if (!PEM_read_bio_X509(bp, &cert, 0, 0)) {
 	BIO_free(bp);
-	return (0);
+	return 0;
     }
     BIO_free(bp);
 
     /*
      * Extract ASN.1 DER form of certificate or public key.
      */
-    switch (*selector) {
+    switch (s) {
     case SSL_DANE_SELECTOR_CERT:
 	len = i2d_X509(cert, NULL);
 	buf2 = buf = (unsigned char *) OPENSSL_malloc(len);
@@ -83,11 +81,20 @@ static int cert_digest(
     }
     OPENSSL_assert(buf2 - buf == len);
 
-    if ((md = EVP_get_digestbyname(argv[3])) == 0) {
-	fprintf(stderr, "Invalid certificate digest: %s", argv[3]);
-	return 0;
+    if (mdname) {
+	if ((md = EVP_get_digestbyname(mdname)) == 0) {
+	    fprintf(stderr, "Invalid certificate digest: %s", argv[3]);
+	    return 0;
+	}
+	EVP_Digest(buf, len, mdbuf, &mdlen, md, 0);
+	tlsa_data = mdbuf;
+	len = mdlen;
+    } else {
+	tlsa_data = buf;
     }
-    return EVP_Digest(buf, len, mdbuf, mdlen, md, 0);
+    ret = SSL_dane_add_tlsa(ssl, u, s, mdname, tlsa_data, len);
+    OPENSSL_free(buf);
+    return ret;
 }
 
 static int connect_host_port(const char *host, const char *port)
@@ -109,10 +116,10 @@ static int connect_host_port(const char *host, const char *port)
     }
 
     for (a = ai; a; a = a->ai_next) {
-	fd = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
-	if (fd < 0)
+        fd = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
+        if (fd < 0)
 	   continue;
-	if (connect(fd, a->ai_addr, a->ai_addrlen) >= 0) {
+        if (connect(fd, a->ai_addr, a->ai_addrlen) >= 0) {
 	    printf("connected to %s:%s\n", host, port);
 	    break;
 	}
@@ -125,22 +132,48 @@ static int connect_host_port(const char *host, const char *port)
     return fd;
 }
 
+static int verify_callback(int ok, X509_STORE_CTX *ctx)
+{
+    char    buf[8192];
+    X509   *cert;
+    int     err;
+    int     depth;
+    SSL    *ssl;
+
+    cert = X509_STORE_CTX_get_current_cert(ctx);
+    err = X509_STORE_CTX_get_error(ctx);
+    ssl = X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
+    depth = X509_STORE_CTX_get_error_depth(ctx);
+
+    if (cert)
+	X509_NAME_oneline(X509_get_subject_name(cert), buf, sizeof(buf));
+    else
+	strcpy(buf, "<unknown>");
+    printf("depth=%d verify=%d err=%d subject=%s\n", depth, ok, err, buf);
+    return 1;
+}
+
 void usage(const char *progname)
 {
-    fprintf(stderr, "Usage: %s u s m certfile cafile"
-	    " service hostname [certname ...]\n", progname);
+    fprintf(stderr, "Usage: %s certificate-usage selector matching-type"
+    	    " certfile \\\n\t\tCAfile service hostname [certname ...]\n",
+	    progname);
+    fprintf(stderr, "  where, certificate-usage = TLSA certificate usage,\n");
+    fprintf(stderr, "\t selector = TLSA selector,\n");
+    fprintf(stderr, "\t matching-type = empty string or OpenSSL digest algorithm name,\n");
+    fprintf(stderr, "\t PEM certfile provides certificate association data,\n");
+    fprintf(stderr, "\t PEM CAfile contains any usage 0/1 trusted roots,\n");
+    fprintf(stderr, "\t service = destination port number or service name,\n");
+    fprintf(stderr, "\t hostname = destination hostname,\n");
+    fprintf(stderr, "\t each certname augments the hostname for name checks.\n");
     exit(1);
 }
 
 int main(int argc, const char *argv[])
 {
-    unsigned char digest[EVP_MAX_MD_SIZE];
     SSL_CTX *sctx;
     SSL *ssl;
     int fd;
-    unsigned int dlen;
-    uint8_t u;
-    uint8_t s;
 
     if (argc < 8)
 	usage(argv[0]);
@@ -150,16 +183,15 @@ int main(int argc, const char *argv[])
     SSL_library_init();
     SSL_dane_library_init();
 
-    if (!cert_digest(argv, digest, &dlen, &u, &s))
-	exit(1);
-
     sctx = SSL_CTX_new(SSLv23_method());
     SSL_CTX_load_verify_locations(sctx, argv[5], 0);
+    SSL_CTX_set_verify(sctx, SSL_VERIFY_NONE, verify_callback);
 
     SSL_CTX_dane_init(sctx);
     ssl = SSL_new(sctx);
     SSL_dane_init(ssl, argv[7], argv+7);
-    SSL_dane_add_tlsa(ssl, u, s, argv[3], digest, dlen);
+    if (!add_tlsa(ssl, argv))
+	exit(1);
 
     if ((fd = connect_host_port(argv[7], argv[6])) >= 0 &&
 	SSL_set_fd(ssl, fd) && SSL_connect(ssl)) {
