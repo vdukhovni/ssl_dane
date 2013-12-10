@@ -18,17 +18,13 @@ void    print_errors(void)
     const char *data;
     int line;
     int flags;
-    unsigned long thread;
 
-    thread = CRYPTO_thread_id();
     while ((err = ERR_get_error_line_data(&file, &line, &data, &flags)) != 0) {
 	ERR_error_string_n(err, buffer, sizeof(buffer));
 	if (flags & ERR_TXT_STRING)
-	    fprintf(stderr, "Error: %lu:%s:%s:%d:%s\n",
-		    thread, buffer, file, line, data);
+	    fprintf(stderr, "Error: %s:%s:%d:%s\n", buffer, file, line, data);
 	else
-	    fprintf(stderr, "Error: %lu:%s:%s:%d\n",
-		    thread, buffer, file, line);
+	    fprintf(stderr, "Error: %s:%s:%d\n", buffer, file, line);
     }
 }
 
@@ -206,7 +202,6 @@ int main(int argc, const char *argv[])
     print_errors();
 
     EVP_cleanup();
-    ERR_remove_state(0);
     ENGINE_cleanup();
     CONF_modules_unload(1);
     ERR_free_strings();

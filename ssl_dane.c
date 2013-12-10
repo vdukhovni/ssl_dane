@@ -157,6 +157,7 @@ typedef struct SSL_DANE {
     DANE_SELECTOR_LIST selectors[SSL_DANE_USAGE_LAST + 1];
     int            depth;
     int		   multi;		/* Multi-label wildcards? */
+    int		   count;		/* Number of TLSA records */
 } SSL_DANE;
 
 #ifndef X509_V_ERR_HOSTNAME_MISMATCH
@@ -482,13 +483,9 @@ static int wrap_issuer(
     return ret;
 }
 
-static int wrap_cert(
-	SSL_DANE *dane,
-	int depth,
-	X509 *tacert
-)
+static int wrap_cert(SSL_DANE *dane, X509 *tacert, int depth)
 {
-    dane->depth = depth;
+    dane->depth = depth + 1;
 
     /*
      * If the TA certificate is self-issued, or need not be, use it directly.
@@ -531,7 +528,7 @@ static int ta_signed(
 	    }
 	    /* Check signature, since some other TA may work if not this. */
 	    if (X509_verify(cert, pk) > 0)
-		done = wrap_cert(dane, depth + 1, x->value) ? 1 : -1;
+		done = wrap_cert(dane, x->value, depth) ? 1 : -1;
 	    EVP_PKEY_free(pk);
 	}
     }
@@ -628,7 +625,7 @@ static int set_trust_anchor(
 	    } else
 		matched = -1;
 	} else if (matched == MATCHED_CERT) {
-	    if (!wrap_cert(dane, depth, ca))
+	    if (!wrap_cert(dane, ca, depth))
 		matched = -1;
 	} else if (matched == MATCHED_PKEY) {
 	    if ((takey = X509_get_pubkey(ca)) == 0 ||
@@ -837,6 +834,8 @@ static int name_check(SSL_DANE *dane, X509 *cert)
 
 static int verify_chain(X509_STORE_CTX *ctx)
 {
+    DANE_SELECTOR_LIST issuer_rrs;
+    DANE_SELECTOR_LIST leaf_rrs;
     int (*cb)(int, X509_STORE_CTX *) = ctx->verify_cb;
     int ssl_idx = SSL_get_ex_data_X509_STORE_CTX_idx();
     SSL *ssl = X509_STORE_CTX_get_ex_data(ctx, ssl_idx);
@@ -845,18 +844,44 @@ static int verify_chain(X509_STORE_CTX *ctx)
     int matched = 0;
     int chain_length = sk_X509_num(ctx->chain);
 
+    issuer_rrs = dane->selectors[SSL_DANE_USAGE_LIMIT_ISSUER];
+    leaf_rrs = dane->selectors[SSL_DANE_USAGE_LIMIT_LEAF];
+    ctx->verify = dane->verify;
+
+    if ((matched = name_check(dane, cert)) < 0)
+	return 0;
+
+    if (!matched) {
+	ctx->error_depth = 0;
+	ctx->current_cert = cert;
+	X509_STORE_CTX_set_error(ctx, X509_V_ERR_HOSTNAME_MISMATCH);
+	if (!cb(0, ctx))
+	    return 0;
+    }
+
     /*
      * Satisfy at least one usage 0 or 1 constraint, unless we've already
      * matched a usage 2 trust anchor.
+     *
+     * XXX: internal_verify() doesn't callback with top certs that are not
+     * self-issued.  This should be fixed in a future OpenSSL.
      */
-    if (!dane->roots) {
-	DANE_SELECTOR_LIST issuer_rrs;
-	DANE_SELECTOR_LIST leaf_rrs;
-	int n;
+    if (dane->roots && sk_X509_num(dane->roots)) {
+#ifndef NO_CALLBACK_WORKAROUND
+    	X509 *top = sk_X509_value(ctx->chain, dane->depth);
 
-	issuer_rrs = dane->selectors[SSL_DANE_USAGE_LIMIT_ISSUER];
-	leaf_rrs = dane->selectors[SSL_DANE_USAGE_LIMIT_LEAF];
-	n = issuer_rrs ? chain_length : 1;
+	if (X509_check_issued(top, top) != X509_V_OK) {
+	    ctx->error_depth = dane->depth;
+	    ctx->current_cert = top;
+	    if (!cb(1, ctx))
+		return 0;
+	}
+#endif
+	/* Pop synthetic trust-anchor ancestors off the chain! */
+	while (--chain_length > dane->depth)
+	    X509_free(sk_X509_pop(ctx->chain));
+    } else if (issuer_rrs || leaf_rrs) {
+	int n = issuer_rrs ? chain_length : 1;
 
 	while (!matched && --n >= 0) {
 	    X509 *cert = sk_X509_value(ctx->chain, n);
@@ -876,24 +901,9 @@ static int verify_chain(X509_STORE_CTX *ctx)
 	    if (!cb(0, ctx))
 		return 0;
 	}
-    } else {
-	/* Pop synthetic trust-anchor ancestors off the chain! */
-	while (--chain_length > dane->depth)
-	    X509_free(sk_X509_pop(ctx->chain));
     }
 
-    if ((matched = name_check(dane, cert)) < 0)
-	return 0;
-
-    if (!matched) {
-	ctx->error_depth = 0;
-	ctx->current_cert = cert;
-	X509_STORE_CTX_set_error(ctx, X509_V_ERR_HOSTNAME_MISMATCH);
-	if (!cb(0, ctx))
-	    return 0;
-    }
-
-    return dane->verify(ctx);
+    return ctx->verify(ctx);
 }
 
 static int verify_cert(X509_STORE_CTX *ctx, void *unused_ctx)
@@ -1163,6 +1173,7 @@ int SSL_dane_add_tlsa(
 	LINSERT(dane->certs, xlist);
     else if (klist)
 	LINSERT(dane->pkeys, klist);
+    ++dane->count;
     return 1;
 }
 
@@ -1205,8 +1216,9 @@ int SSL_dane_init(SSL *ssl, const char *sni_domain, const char **hostnames)
     dane->chain = 0;
     dane->roots = 0;
     dane->depth = -1;
-    dane->mhost = 0;
-    dane->multi = 0;
+    dane->mhost = 0;			/* Future SSL control interface */
+    dane->multi = 0;			/* Future SSL control interface */
+    dane->count = 0;
 
     for (i = 0; i <= SSL_DANE_USAGE_LAST; ++i)
 	dane->selectors[i] = 0;
