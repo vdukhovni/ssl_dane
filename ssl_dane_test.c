@@ -49,6 +49,7 @@ static int add_tlsa(SSL *ssl, const char *argv[])
 	return 0;
     }
     if (!PEM_read_bio_X509(bp, &cert, 0, 0)) {
+	print_errors();
 	BIO_free(bp);
 	return 0;
     }
@@ -79,7 +80,7 @@ static int add_tlsa(SSL *ssl, const char *argv[])
 
     if (mdname) {
 	if ((md = EVP_get_digestbyname(mdname)) == 0) {
-	    fprintf(stderr, "Invalid certificate digest: %s", argv[3]);
+	    fprintf(stderr, "Invalid certificate digest: %s\n", mdname);
 	    return 0;
 	}
 	EVP_Digest(buf, len, mdbuf, &mdlen, md, 0);
@@ -152,7 +153,7 @@ static int verify_callback(int ok, X509_STORE_CTX *ctx)
 void usage(const char *progname)
 {
     fprintf(stderr, "Usage: %s certificate-usage selector matching-type"
-    	    " certfile \\\n\t\tCAfile service hostname [certname ...]\n",
+	    " certfile \\\n\t\tCAfile service hostname [certname ...]\n",
 	    progname);
     fprintf(stderr, "  where, certificate-usage = TLSA certificate usage,\n");
     fprintf(stderr, "\t selector = TLSA selector,\n");

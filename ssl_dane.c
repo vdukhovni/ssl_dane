@@ -84,9 +84,9 @@ static int err_lib_dane = -1;
 static int dane_idx = -1;
 
 #ifdef X509_V_FLAG_PARTIAL_CHAIN       /* OpenSSL >= 1.0.2 */
-static int wrap_self_issued = 0;
+static int wrap_to_root = 0;
 #else
-static int wrap_self_issued = 1;
+static int wrap_to_root = 1;
 #endif
 
 static void (*cert_free)(void *) = (void (*)(void *)) X509_free;
@@ -164,11 +164,7 @@ typedef struct SSL_DANE {
 #define X509_V_ERR_HOSTNAME_MISMATCH X509_V_ERR_APPLICATION_VERIFICATION
 #endif
 
-static int match(
-	DANE_SELECTOR_LIST slist,
-	X509 *cert,
-	int depth
-)
+static int match(DANE_SELECTOR_LIST slist, X509 *cert, int depth)
 {
     int matched;
 
@@ -248,39 +244,26 @@ static int push_ext(X509 *cert, X509_EXTENSION *ext)
 {
     X509_EXTENSIONS *exts;
 
-    if ((exts = cert->cert_info->extensions) == 0)
-	exts = cert->cert_info->extensions = sk_X509_EXTENSION_new_null();
-    if (!exts) {
-	DANEerr(DANE_F_PUSH_EXT, ERR_R_MALLOC_FAILURE);
-	return 0;
+    if (ext) {
+	if ((exts = cert->cert_info->extensions) == 0)
+	    exts = cert->cert_info->extensions = sk_X509_EXTENSION_new_null();
+	if (exts && sk_X509_EXTENSION_push(exts, ext))
+	    return 1;
+	X509_EXTENSION_free(ext);
     }
-    return sk_X509_EXTENSION_push(exts, ext);
-}
-
-static int add_ext(
-	X509 *issuer,
-	X509 *subject,
-	int ext_nid,
-	char *ext_val
-)
-{
-    X509V3_CTX v3ctx;
-    X509_EXTENSION *ext;
-
-    X509V3_set_ctx(&v3ctx, issuer, subject, 0, 0, 0);
-    if ((ext = X509V3_EXT_conf_nid(0, &v3ctx, ext_nid, ext_val)) == 0)
-	return 0;
-    if (push_ext(subject, ext))
-	return 1;
-    X509_EXTENSION_free(ext);
+    DANEerr(DANE_F_PUSH_EXT, ERR_R_MALLOC_FAILURE);
     return 0;
 }
 
-static int set_serial(
-	X509 *cert,
-	AUTHORITY_KEYID *akid,
-	X509 *subject
-)
+static int add_ext(X509 *issuer, X509 *subject, int ext_nid, char *ext_val)
+{
+    X509V3_CTX v3ctx;
+
+    X509V3_set_ctx(&v3ctx, issuer, subject, 0, 0, 0);
+    return push_ext(subject, X509V3_EXT_conf_nid(0, &v3ctx, ext_nid, ext_val));
+}
+
+static int set_serial(X509 *cert, AUTHORITY_KEYID *akid, X509 *subject)
 {
     int ret = 0;
     BIGNUM *bn;
@@ -302,11 +285,9 @@ static int set_serial(
     return ret;
 }
 
-static int add_akid(
-	X509 *cert,
-	AUTHORITY_KEYID *akid
-)
+static int add_akid(X509 *cert, AUTHORITY_KEYID *akid)
 {
+    int nid = NID_authority_key_identifier;
     ASN1_STRING *id;
     unsigned char c = 0;
     int ret = 0;
@@ -325,38 +306,23 @@ static int add_akid(
     if ((akid = AUTHORITY_KEYID_new()) != 0
 	&& (akid->keyid = ASN1_OCTET_STRING_new()) != 0
 	&& M_ASN1_OCTET_STRING_set(akid->keyid, (void *) &c, 1)
-	&& X509_add1_ext_i2d(cert, NID_authority_key_identifier, akid, 0, 0))
+	&& X509_add1_ext_i2d(cert, nid, akid, 0, X509V3_ADD_APPEND))
 	ret = 1;
     if (akid)
 	AUTHORITY_KEYID_free(akid);
     return ret;
 }
 
-static int add_skid(
-	X509 *cert,
-	AUTHORITY_KEYID *akid
-)
+static int add_skid(X509 *cert, AUTHORITY_KEYID *akid)
 {
-    int ret = 0;
     int nid = NID_subject_key_identifier;
-    X509_EXTENSION *ext;
 
-    if (akid && akid->keyid) {
-	ASN1_STRING *id = (ASN1_STRING *) (akid->keyid);
-	ext = X509_EXTENSION_create_by_NID(0, nid, 0, id);
-	if (ext) {
-	    ret = push_ext(cert, ext);
-	} else
-	    DANEerr(DANE_F_ADD_SKID, ERR_R_MALLOC_FAILURE);
-    } else {
-	ret = add_ext(0, cert, NID_subject_key_identifier, "hash");
-    }
-    return ret;
+    if (!akid || !akid->keyid)
+	return add_ext(0, cert, nid, "hash");
+    return X509_add1_ext_i2d(cert, nid, akid->keyid, 0, X509V3_ADD_APPEND) > 0;
 }
 
-static X509_NAME *akid_issuer_name(
-	AUTHORITY_KEYID *akid
-)
+static X509_NAME *akid_issuer_name(AUTHORITY_KEYID *akid)
 {
     if (akid && akid->issuer) {
 	int     i;
@@ -372,10 +338,7 @@ static X509_NAME *akid_issuer_name(
     return 0;
 }
 
-static int set_issuer_name(
-	X509 *cert,
-	AUTHORITY_KEYID *akid
-)
+static int set_issuer_name(X509 *cert, AUTHORITY_KEYID *akid)
 {
     X509_NAME *name = akid_issuer_name(akid);
 
@@ -388,25 +351,29 @@ static int set_issuer_name(
     return X509_set_issuer_name(cert, X509_get_subject_name(cert));
 }
 
-static int grow_chain(STACK_OF(X509) **skptr, X509 *cert, int add_trust)
+static int grow_chain(SSL_DANE *dane, int trusted, X509 *cert)
 {
-    static ASN1_OBJECT *trust = 0;
+    STACK_OF(X509) **xs = trusted ? &dane->roots : &dane->chain;
+    static ASN1_OBJECT *serverAuth = 0;
 
-    if (add_trust && trust == 0 &&
-       (trust = OBJ_nid2obj(NID_server_auth)) == 0) {
+#define UNTRUSTED 0
+#define TRUSTED 1
+
+    if (trusted && serverAuth == 0 &&
+       (serverAuth = OBJ_nid2obj(NID_server_auth)) == 0) {
 	DANEerr(DANE_F_GROW_CHAIN, ERR_R_MALLOC_FAILURE);
 	return 0;
     }
-    if (!*skptr && (*skptr = sk_X509_new_null()) == 0) {
+    if (!*xs && (*xs = sk_X509_new_null()) == 0) {
 	DANEerr(DANE_F_GROW_CHAIN, ERR_R_MALLOC_FAILURE);
 	return 0;
     }
 
     if (cert) {
-	if (add_trust && !X509_add1_trust_object(cert, trust))
+	if (trusted && !X509_add1_trust_object(cert, serverAuth))
 	    return 0;
 	CRYPTO_add(&cert->references, 1, CRYPTO_LOCK_X509);
-	if (!sk_X509_push(*skptr, cert)) {
+	if (!sk_X509_push(*xs, cert)) {
 	    X509_free(cert);
 	    DANEerr(DANE_F_GROW_CHAIN, ERR_R_MALLOC_FAILURE);
 	    return 0;
@@ -420,27 +387,26 @@ static int wrap_issuer(
 	EVP_PKEY *key,
 	X509 *subject,
 	int depth,
-	int recurse
+	int top
 )
 {
     int ret = 1;
     X509 *cert = 0;
     AUTHORITY_KEYID *akid;
     X509_NAME *name = X509_get_issuer_name(subject);
-    X509_NAME *akid_name;
+    EVP_PKEY *newkey = key ? key : X509_get_pubkey(subject);
+
+#define WRAP_MID 0		/* Ensure intermediate. */
+#define WRAP_TOP 1		/* Ensure self-signed. */
+
+    if (name == 0 || newkey == 0 || (cert = X509_new()) == 0)
+	return 0;
 
     /*
      * Record the depth of the trust-anchor certificate.
      */
     if (dane->depth < 0)
 	dane->depth = depth + 1;
-
-    /*
-     * If key is NULL generate a self-issued root CA, otherwise an
-     * intermediate CA and a self-signed issuer.
-     */
-    if ((cert = X509_new()) == 0)
-	return 0;
 
     /*
      * XXX: Uncaught error condition:
@@ -451,32 +417,36 @@ static int wrap_issuer(
     ERR_clear_error();
     akid = X509_get_ext_d2i(subject, NID_authority_key_identifier, 0, 0);
     /* XXX: Should we peek at the error stack here??? */
-    if ((akid_name = akid_issuer_name(akid)) == 0
-	|| X509_NAME_cmp(name, akid_name) == 0)
-	recurse = 0;
 
-    /* CA cert valid for +/- 30 days */
+    /*
+     * If top is true generate a self-issued root CA, otherwise an
+     * intermediate CA and possibly its self-signed issuer.
+     *
+     * CA cert valid for +/- 30 days
+     */
     if (!X509_set_version(cert, 2)
 	|| !set_serial(cert, akid, subject)
 	|| !X509_set_subject_name(cert, name)
 	|| !set_issuer_name(cert, akid)
 	|| !X509_gmtime_adj(X509_get_notBefore(cert), -30 * 86400L)
 	|| !X509_gmtime_adj(X509_get_notAfter(cert), 30 * 86400L)
-	|| !X509_set_pubkey(cert, key ? key : X509_get_pubkey(subject))
+	|| !X509_set_pubkey(cert, newkey)
 	|| !add_ext(0, cert, NID_basic_constraints, "CA:TRUE")
-	|| (recurse && !add_akid(cert, akid))
+	|| (!top && !add_akid(cert, akid))
 	|| !add_skid(cert, akid)
-	|| (recurse && wrap_self_issued &&
-	    !wrap_issuer(dane, 0, cert, depth, 0))) {
+	|| (!top && wrap_to_root &&
+	    !wrap_issuer(dane, newkey, cert, depth, WRAP_TOP))) {
 	ret = 0;
     }
     if (akid)
 	AUTHORITY_KEYID_free(akid);
+    if (!key)
+	EVP_PKEY_free(newkey);
     if (ret) {
-	if (recurse && wrap_self_issued)
-	    ret = grow_chain(&dane->chain, cert, 0);
+	if (!top && wrap_to_root)
+	    ret = grow_chain(dane, UNTRUSTED, cert);
 	else
-	    ret = grow_chain(&dane->roots, cert, 1);
+	    ret = grow_chain(dane, TRUSTED, cert);
     }
     if (cert)
 	X509_free(cert);
@@ -491,18 +461,16 @@ static int wrap_cert(SSL_DANE *dane, X509 *tacert, int depth)
      * If the TA certificate is self-issued, or need not be, use it directly.
      * Otherwise, synthesize requisuite ancestors.
      */
-    if (!wrap_self_issued
+    if (!wrap_to_root
 	|| X509_check_issued(tacert, tacert) == X509_V_OK)
-	return grow_chain(&dane->roots, tacert, 1);
-    return (grow_chain(&dane->chain, tacert, 0) &&
-	    wrap_issuer(dane, 0, tacert, depth, 1));
+	return grow_chain(dane, TRUSTED, tacert);
+
+    if (wrap_issuer(dane, 0, tacert, depth, WRAP_MID))
+	return grow_chain(dane, UNTRUSTED, tacert);
+    return 0;
 }
 
-static int ta_signed(
-	SSL_DANE *dane,
-	X509 *cert,
-	int depth
-)
+static int ta_signed(SSL_DANE *dane, X509 *cert, int depth)
 {
     DANE_CERT_LIST x;
     DANE_PKEY_LIST k;
@@ -552,16 +520,12 @@ static int ta_signed(
      */
     for (k = dane->pkeys; !done && k; k = k->next)
 	if (X509_verify(cert, k->value) > 0)
-	    done = wrap_issuer(dane, k->value, cert, depth, 1) ? 1 : -1;
+	    done = wrap_issuer(dane, k->value, cert, depth, WRAP_MID) ? 1 : -1;
 
     return done;
 }
 
-static int set_trust_anchor(
-	X509_STORE_CTX *ctx,
-	SSL_DANE *dane,
-	X509 *cert
-)
+static int set_trust_anchor(X509_STORE_CTX *ctx, SSL_DANE *dane, X509 *cert)
 {
     int matched = 0;
     int n;
@@ -571,13 +535,13 @@ static int set_trust_anchor(
     X509 *ca;
     STACK_OF(X509) *in = ctx->untrusted;	/* XXX: Accessor? */
 
-    if (!grow_chain(&dane->chain, 0, 0))
+    if (!grow_chain(dane, UNTRUSTED, 0))
 	return -1;
 
     /* Accept a degenerate case: depth 0 self-signed trust-anchor. */
     if (X509_check_issued(cert, cert) == X509_V_OK) {
 	matched = match(dane->selectors[SSL_DANE_USAGE_TRUSTED_CA], cert, 0);
-	if (matched > 0 && !grow_chain(&dane->roots, cert, 1))
+	if (matched > 0 && !grow_chain(dane, TRUSTED, cert))
 	    matched = -1;
 	return matched;
     }
@@ -614,7 +578,7 @@ static int set_trust_anchor(
 	/* If not a trust anchor, record untrusted ca and continue. */
 	if ((matched = match(dane->selectors[SSL_DANE_USAGE_TRUSTED_CA], ca,
 			     depth + 1)) == 0) {
-	    if (grow_chain(&dane->chain, ca, 0)) {
+	    if (grow_chain(dane, UNTRUSTED, ca)) {
 		if (!X509_check_issued(ca, ca) == X509_V_OK) {
 		    /* Restart with issuer as subject */
 		    cert = ca;
@@ -629,7 +593,7 @@ static int set_trust_anchor(
 		matched = -1;
 	} else if (matched == MATCHED_PKEY) {
 	    if ((takey = X509_get_pubkey(ca)) == 0 ||
-		!wrap_issuer(dane, takey, cert, depth, 1)) {
+		!wrap_issuer(dane, takey, cert, depth, WRAP_MID)) {
 		if (takey)
 		    EVP_PKEY_free(takey);
 		else
@@ -664,11 +628,7 @@ static int set_trust_anchor(
     return matched;
 }
 
-static int check_end_entity(
-    X509_STORE_CTX *ctx,
-    SSL_DANE *dane,
-    X509 *cert
-)
+static int check_end_entity(X509_STORE_CTX *ctx, SSL_DANE *dane, X509 *cert)
 {
     int matched;
 
@@ -868,7 +828,7 @@ static int verify_chain(X509_STORE_CTX *ctx)
      */
     if (dane->roots && sk_X509_num(dane->roots)) {
 #ifndef NO_CALLBACK_WORKAROUND
-    	X509 *top = sk_X509_value(ctx->chain, dane->depth);
+	X509 *top = sk_X509_value(ctx->chain, dane->depth);
 
 	if (X509_check_issued(top, top) != X509_V_OK) {
 	    ctx->error_depth = dane->depth;
@@ -932,13 +892,17 @@ static int verify_cert(X509_STORE_CTX *ctx, void *unused_ctx)
 	    ctx->current_cert = cert;
 	    return cb(1, ctx);
 	}
-	if (matched < 0)
+	if (matched < 0) {
+	    X509_STORE_CTX_set_error(ctx, X509_V_ERR_OUT_OF_MEM);
 	    return -1;
+	}
     }
 
     if (dane->selectors[SSL_DANE_USAGE_TRUSTED_CA] &&
-	set_trust_anchor(ctx, dane, cert) < 0)
+	set_trust_anchor(ctx, dane, cert) < 0) {
+	X509_STORE_CTX_set_error(ctx, X509_V_ERR_OUT_OF_MEM);
 	return -1;
+    }
 
     /*
      * Name checks and usage 0/1 constraint enforcement are delayed until

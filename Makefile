@@ -1,5 +1,5 @@
-CFLAGS	= -g -I/opt/local/include
-LDFLAGS	= -L/opt/local/lib -lssl -lcrypto
+CFLAGS	= -Wall -Werror -g
+LDFLAGS	= -lssl -lcrypto
 
 PROG=ssl_dane_test
 OBJS=ssl_dane_test.o ssl_dane.o
