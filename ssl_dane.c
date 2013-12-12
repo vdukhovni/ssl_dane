@@ -808,8 +808,10 @@ static int verify_chain(X509_STORE_CTX *ctx)
     leaf_rrs = dane->selectors[SSL_DANE_USAGE_LIMIT_LEAF];
     ctx->verify = dane->verify;
 
-    if ((matched = name_check(dane, cert)) < 0)
+    if ((matched = name_check(dane, cert)) < 0) {
+	X509_STORE_CTX_set_error(ctx, X509_V_ERR_OUT_OF_MEM);
 	return 0;
+    }
 
     if (!matched) {
 	ctx->error_depth = 0;
@@ -818,6 +820,7 @@ static int verify_chain(X509_STORE_CTX *ctx)
 	if (!cb(0, ctx))
 	    return 0;
     }
+    matched = 0;
 
     /*
      * Satisfy at least one usage 0 or 1 constraint, unless we've already
@@ -846,13 +849,16 @@ static int verify_chain(X509_STORE_CTX *ctx)
 	while (!matched && --n >= 0) {
 	    X509 *cert = sk_X509_value(ctx->chain, n);
 
-	    if (issuer_rrs)
+	    if (n > 0 && issuer_rrs)
 		matched = match(issuer_rrs, cert, n);
 	    if (!matched && n == 0 && leaf_rrs)
 		matched = match(leaf_rrs, cert, 0);
 	}
-	if (matched < 0)
+
+	if (matched < 0) {
+	    X509_STORE_CTX_set_error(ctx, X509_V_ERR_OUT_OF_MEM);
 	    return 0;
+	}
 
 	if (!matched) {
 	    ctx->current_cert = cert;

@@ -135,11 +135,9 @@ static int verify_callback(int ok, X509_STORE_CTX *ctx)
     X509   *cert;
     int     err;
     int     depth;
-    SSL    *ssl;
 
     cert = X509_STORE_CTX_get_current_cert(ctx);
     err = X509_STORE_CTX_get_error(ctx);
-    ssl = X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
     depth = X509_STORE_CTX_get_error_depth(ctx);
 
     if (cert)

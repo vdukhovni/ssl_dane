@@ -1,13 +1,17 @@
 CFLAGS	= -Wall -Werror -g
 LDFLAGS	= -lssl -lcrypto
 
-PROG=ssl_dane_test
-OBJS=ssl_dane_test.o ssl_dane.o
+PROG1	= connected
+PROG2 	= offline
+OBJS	= ssl_dane.o
 
-all: ${PROG}
+all: ${PROG1} ${PROG2}
 
-${PROG}: ${OBJS}
-	$(CC) -o $@ ${OBJS} ${LDFLAGS}
+${PROG1}: ${PROG1}.o ${OBJS}
+	$(CC) -o $@ ${PROG1}.o ${OBJS} ${LDFLAGS}
+
+${PROG2}: ${PROG2}.o ${OBJS}
+	$(CC) -o $@ ${PROG2}.o ${OBJS} ${LDFLAGS}
 
 clean:
-	$(RM) ${PROG} ${OBJS}
+	$(RM) ${PROG1} ${PROG2} *.o
