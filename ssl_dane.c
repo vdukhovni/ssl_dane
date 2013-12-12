@@ -455,7 +455,8 @@ static int wrap_issuer(
 
 static int wrap_cert(SSL_DANE *dane, X509 *tacert, int depth)
 {
-    dane->depth = depth + 1;
+    if (dane->depth < 0)
+	dane->depth = depth + 1;
 
     /*
      * If the TA certificate is self-issued, or need not be, use it directly.
@@ -517,10 +518,15 @@ static int ta_signed(SSL_DANE *dane, X509 *cert, int depth)
      * ASN1 tag and length thus also excluding the unused bits field that is
      * logically part of the length).  However, some CAs have a non-standard
      * authority keyid, so we lose.  Too bad.
+     *
+     * This may push errors onto the stack when the certificate signature is
+     * not of the right type or length, throw these away,
      */
     for (k = dane->pkeys; !done && k; k = k->next)
 	if (X509_verify(cert, k->value) > 0)
 	    done = wrap_issuer(dane, k->value, cert, depth, WRAP_MID) ? 1 : -1;
+	else
+	    ERR_clear_error();
 
     return done;
 }
@@ -538,8 +544,11 @@ static int set_trust_anchor(X509_STORE_CTX *ctx, SSL_DANE *dane, X509 *cert)
     if (!grow_chain(dane, UNTRUSTED, 0))
 	return -1;
 
-    /* Accept a degenerate case: depth 0 self-signed trust-anchor. */
+    /*
+     * Accept a degenerate case: depth 0 self-signed trust-anchor.
+     */
     if (X509_check_issued(cert, cert) == X509_V_OK) {
+	dane->depth = 0;
 	matched = match(dane->selectors[SSL_DANE_USAGE_TRUSTED_CA], cert, 0);
 	if (matched > 0 && !grow_chain(dane, TRUSTED, cert))
 	    matched = -1;
@@ -612,18 +621,8 @@ static int set_trust_anchor(X509_STORE_CTX *ctx, SSL_DANE *dane, X509 *cert)
      * no issuer in the chain, we check for a possible signature via a DNS
      * obtained TA cert or public key.
      */
-    if (matched < 0 ||
-	(matched == 0 &&
-	 (!cert || (matched = ta_signed(dane, cert, depth)) <= 0)))
-	return matched;
-
-    /*
-     * Check that setting the untrusted chain updates the expected
-     * structure member at the expected offset.
-     */
-    X509_STORE_CTX_trusted_stack(ctx, dane->roots);
-    X509_STORE_CTX_set_chain(ctx, dane->chain);
-    OPENSSL_assert(ctx->untrusted == dane->chain);
+    if (matched == 0 && cert)
+	 matched = ta_signed(dane, cert, depth);
 
     return matched;
 }
@@ -844,15 +843,19 @@ static int verify_chain(X509_STORE_CTX *ctx)
 	while (--chain_length > dane->depth)
 	    X509_free(sk_X509_pop(ctx->chain));
     } else if (issuer_rrs || leaf_rrs) {
-	int n = issuer_rrs ? chain_length : 1;
+	int n = chain_length;
 
-	while (!matched && --n >= 0) {
-	    X509 *cert = sk_X509_value(ctx->chain, n);
+	/*
+	 * Check for an EE match, then a CA match at depths > 0, and
+	 * finally, if the EE cert is self-issued, for a depth 0 CA match.
+	 */
+	if (leaf_rrs)
+	    matched = match(leaf_rrs, cert, 0);
+	while (!matched && issuer_rrs && --n >= 0) {
+	    X509 *xn = sk_X509_value(ctx->chain, n);
 
-	    if (n > 0 && issuer_rrs)
-		matched = match(issuer_rrs, cert, n);
-	    if (!matched && n == 0 && leaf_rrs)
-		matched = match(leaf_rrs, cert, 0);
+	    if (n > 0 || X509_check_issued(xn, xn) == X509_V_OK)
+		matched = match(issuer_rrs, xn, n);
 	}
 
 	if (matched < 0) {
@@ -904,10 +907,20 @@ static int verify_cert(X509_STORE_CTX *ctx, void *unused_ctx)
 	}
     }
 
-    if (dane->selectors[SSL_DANE_USAGE_TRUSTED_CA] &&
-	set_trust_anchor(ctx, dane, cert) < 0) {
-	X509_STORE_CTX_set_error(ctx, X509_V_ERR_OUT_OF_MEM);
-	return -1;
+    if (dane->selectors[SSL_DANE_USAGE_TRUSTED_CA]) {
+	if ((matched = set_trust_anchor(ctx, dane, cert)) < 0) {
+	    X509_STORE_CTX_set_error(ctx, X509_V_ERR_OUT_OF_MEM);
+	    return -1;
+	}
+	if (matched) {
+	    /*
+	     * Check that setting the untrusted chain updates the expected
+	     * structure member at the expected offset.
+	     */
+	    X509_STORE_CTX_trusted_stack(ctx, dane->roots);
+	    X509_STORE_CTX_set_chain(ctx, dane->chain);
+	    OPENSSL_assert(ctx->untrusted == dane->chain);
+	}
     }
 
     /*
