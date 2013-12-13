@@ -2,6 +2,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <unistd.h>
+#include <stdarg.h>
 
 #include <openssl/engine.h>
 #include <openssl/conf.h>
@@ -164,6 +165,19 @@ void usage(const char *progname)
     exit(1);
 }
 
+static void fatal(const char *fmt, ...)
+{
+    va_list ap;
+
+    va_start(ap, fmt);
+    fprintf(stderr, "Fatal: ");
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+
+    print_errors();
+    exit(1);
+}
+
 int main(int argc, const char *argv[])
 {
     SSL_CTX *sctx;
@@ -173,33 +187,44 @@ int main(int argc, const char *argv[])
     if (argc < 8)
 	usage(argv[0]);
 
+    /* SSL library and DANE library initialization */
     SSL_load_error_strings();
-    OpenSSL_add_all_algorithms();
     SSL_library_init();
-    SSL_dane_library_init();
+    if (SSL_dane_library_init() <= 0)
+    	fatal("error initializing DANE library\n");
 
-    sctx = SSL_CTX_new(SSLv23_method());
-    SSL_CTX_load_verify_locations(sctx, argv[5], 0);
+    /* Initialize context for DANE connections */
+    if ((sctx = SSL_CTX_new(SSLv23_client_method())) == 0)
+    	fatal("error allocating SSL_CTX\n");
     SSL_CTX_set_verify(sctx, SSL_VERIFY_NONE, verify_callback);
+    if (*argv[5] && (SSL_CTX_load_verify_locations(sctx, argv[5], 0)) <= 0)
+    	fatal("error loading CAfile\n");
+    if (SSL_CTX_dane_init(sctx) <= 0) 
+    	fatal("error initializing SSL_CTX DANE state\n");
 
-    SSL_CTX_dane_init(sctx);
-    ssl = SSL_new(sctx);
-    SSL_dane_init(ssl, argv[7], argv+7);
+    /* Create a connection handle */
+    if ((ssl = SSL_new(sctx)) == 0)
+    	fatal("error allocating SSL handle\n");
+    if (SSL_dane_init(ssl, argv[7], argv+7) <= 0)
+    	fatal("error initializing SSL handle DANE state\n");
     if (!add_tlsa(ssl, argv))
-	exit(1);
+	fatal("error adding TLSA RR\n");
 
+    /* Connect to, and verify, a live server */
     if ((fd = connect_host_port(argv[7], argv[6])) >= 0 &&
 	SSL_set_fd(ssl, fd) && SSL_connect(ssl)) {
 	printf("verify status: %ld\n", SSL_get_verify_result(ssl));
 	if (SSL_shutdown(ssl) == 0)
 	    SSL_shutdown(ssl);
     }
+    print_errors();
+
+    /* Cleanup */
     SSL_dane_cleanup(ssl);
     SSL_free(ssl);
     SSL_CTX_free(sctx);
 
-    print_errors();
-
+    /* Attempt to release OpenSSL memory resources. */
     EVP_cleanup();
     ENGINE_cleanup();
     CONF_modules_unload(1);
