@@ -11,6 +11,10 @@
 #include <openssl/x509v3.h>
 #include <openssl/evp.h>
 
+#if OPENSSL_VERSION_NUMBER < 0x1000000fL
+#error "OpenSSL 1.0.0 or higher required"
+#else
+
 #include "ssl_dane.h"
 
 #define DANE_F_ADD_SKID			100
@@ -1264,6 +1268,22 @@ static void dane_init(void)
 #endif
 
     /*
+     * Register SHA-2 digests, if implemented and not already registered.
+     */
+#if defined(LN_sha256) && defined(NID_sha256) && !defined(OPENSSL_NO_SHA256)
+    if (!EVP_get_digestbyname(LN_sha224))
+	EVP_add_digest(EVP_sha224());
+    if (!EVP_get_digestbyname(LN_sha256))
+	EVP_add_digest(EVP_sha256());
+#endif
+#if defined(LN_sha512) && defined(NID_sha512) && !defined(OPENSSL_NO_SHA512)
+    if (!EVP_get_digestbyname(LN_sha384))
+	EVP_add_digest(EVP_sha384());
+    if (!EVP_get_digestbyname(LN_sha512))
+	EVP_add_digest(EVP_sha512());
+#endif
+
+    /*
      * Register an SSL index for the connection-specific SSL_DANE structure.
      * Using a separate index makes it possible to add DANE support to
      * existing OpenSSL releases that don't have a suitable pointer in the
@@ -1277,8 +1297,13 @@ int SSL_dane_library_init(void)
     if (err_lib_dane < 0)
 	init_once(&err_lib_dane, ERR_get_next_error_library, dane_init);
 
-    if (dane_idx >= 0)
+#if defined(LN_sha256)
+    /* No DANE without SHA256 support */
+    if (dane_idx >= 0 && EVP_get_digestbyname(LN_sha256) != 0)
 	return 1;
+#endif
     DANEerr(DANE_F_SSL_DANE_LIBRARY_INIT, DANE_R_DANE_SUPPORT);
     return 0;
 }
+
+#endif /* OPENSSL_VERSION_NUMBER */
