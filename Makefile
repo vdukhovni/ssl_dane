@@ -3,7 +3,7 @@ LDFLAGS	= -lssl -lcrypto
 
 PROG1	= connected
 PROG2 	= offline
-OBJS	= ssl_dane.o
+OBJS	= danessl.o
 
 all: ${PROG1} ${PROG2}
 

@@ -15,7 +15,7 @@
 #error "OpenSSL 1.0.0 or higher required"
 #else
 
-#include "ssl_dane.h"
+#include "danessl.h"
 
 #define DANE_F_ADD_SKID			100
 #define DANE_F_CHECK_END_ENTITY		101
@@ -982,7 +982,7 @@ static void dane_selector_free(void *p)
     OPENSSL_free(p);
 }
 
-void SSL_dane_cleanup(SSL *ssl)
+void DANESSL_cleanup(SSL *ssl)
 {
     SSL_DANE *dane;
     int u;
@@ -1025,7 +1025,7 @@ static DANE_HOST_LIST host_list_init(const char **src)
     return head;
 }
 
-int SSL_dane_add_tlsa(
+int DANESSL_add_tlsa(
 	SSL *ssl,
 	uint8_t usage,
 	uint8_t selector,
@@ -1164,7 +1164,7 @@ int SSL_dane_add_tlsa(
     return 1;
 }
 
-int SSL_dane_init(SSL *ssl, const char *sni_domain, const char **hostnames)
+int DANESSL_init(SSL *ssl, const char *sni_domain, const char **hostnames)
 {
     SSL_DANE *dane;
     int i;
@@ -1182,11 +1182,8 @@ int SSL_dane_init(SSL *ssl, const char *sni_domain, const char **hostnames)
     }
 #endif
 
-    /* Client-side SNI requires SSLv3 or better */
-    if (sni_domain)
-	if (!SSL_set_tlsext_host_name(ssl, sni_domain) ||
-	    !(SSL_set_options(ssl, SSL_OP_NO_SSLv2) & SSL_OP_NO_SSLv2))
-	    return 0;
+    if (sni_domain && !SSL_set_tlsext_host_name(ssl, sni_domain))
+	return 0;
 
     if ((dane = (SSL_DANE *) OPENSSL_malloc(sizeof(SSL_DANE))) == 0) {
 	DANEerr(DANE_F_SSL_DANE_INIT, ERR_R_MALLOC_FAILURE);
@@ -1212,14 +1209,14 @@ int SSL_dane_init(SSL *ssl, const char *sni_domain, const char **hostnames)
 
     if (hostnames && (dane->hosts = host_list_init(hostnames)) == 0) {
 	DANEerr(DANE_F_SSL_DANE_INIT, ERR_R_MALLOC_FAILURE);
-	SSL_dane_cleanup(ssl);
+	DANESSL_cleanup(ssl);
 	return 0;
     }
 
     return 1;
 }
 
-int SSL_CTX_dane_init(SSL_CTX *ctx)
+int DANESSL_CTX_init(SSL_CTX *ctx)
 {
     if (dane_idx >= 0) {
 	SSL_CTX_set_cert_verify_callback(ctx, verify_cert, 0);
@@ -1292,7 +1289,7 @@ static void dane_init(void)
     dane_idx = SSL_get_ex_new_index(0, 0, 0, 0, 0);
 }
 
-int SSL_dane_library_init(void)
+int DANESSL_library_init(void)
 {
     if (err_lib_dane < 0)
 	init_once(&err_lib_dane, ERR_get_next_error_library, dane_init);

@@ -9,7 +9,7 @@
 #include <openssl/pem.h>
 #include <openssl/bio.h>
 
-#include "ssl_dane.h"
+#include "danessl.h"
 
 void    print_errors(void)
 {
@@ -90,7 +90,7 @@ static int add_tlsa(SSL *ssl, const char *argv[])
     } else {
 	tlsa_data = buf;
     }
-    ret = SSL_dane_add_tlsa(ssl, u, s, mdname, tlsa_data, len);
+    ret = DANESSL_add_tlsa(ssl, u, s, mdname, tlsa_data, len);
     OPENSSL_free(buf);
     return ret;
 }
@@ -190,7 +190,7 @@ int main(int argc, const char *argv[])
     /* SSL library and DANE library initialization */
     SSL_load_error_strings();
     SSL_library_init();
-    if (SSL_dane_library_init() <= 0)
+    if (DANESSL_library_init() <= 0)
     	fatal("error initializing DANE library\n");
 
     /* Initialize context for DANE connections */
@@ -199,13 +199,13 @@ int main(int argc, const char *argv[])
     SSL_CTX_set_verify(sctx, SSL_VERIFY_NONE, verify_callback);
     if (*argv[5] && (SSL_CTX_load_verify_locations(sctx, argv[5], 0)) <= 0)
     	fatal("error loading CAfile\n");
-    if (SSL_CTX_dane_init(sctx) <= 0) 
+    if (DANESSL_CTX_init(sctx) <= 0)
     	fatal("error initializing SSL_CTX DANE state\n");
 
     /* Create a connection handle */
     if ((ssl = SSL_new(sctx)) == 0)
     	fatal("error allocating SSL handle\n");
-    if (SSL_dane_init(ssl, argv[7], argv+7) <= 0)
+    if (DANESSL_init(ssl, argv[7], argv+7) <= 0)
     	fatal("error initializing SSL handle DANE state\n");
     if (!add_tlsa(ssl, argv))
 	fatal("error adding TLSA RR\n");
@@ -220,7 +220,7 @@ int main(int argc, const char *argv[])
     print_errors();
 
     /* Cleanup */
-    SSL_dane_cleanup(ssl);
+    DANESSL_cleanup(ssl);
     SSL_free(ssl);
     SSL_CTX_free(sctx);
 

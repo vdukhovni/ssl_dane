@@ -22,10 +22,10 @@
 #define SSL_DANE_SELECTOR_SPKI		1
 #define SSL_DANE_SELECTOR_LAST		SSL_DANE_SELECTOR_SPKI
 
-extern int SSL_dane_library_init(void);
-extern int SSL_CTX_dane_init(SSL_CTX *);
-extern int SSL_dane_init(SSL *, const char *, const char **);
-extern void SSL_dane_cleanup(SSL *);
-extern int SSL_dane_add_tlsa(SSL *, uint8_t, uint8_t, const char *,
-			     unsigned const char *, size_t);
+extern int DANESSL_library_init(void);
+extern int DANESSL_CTX_init(SSL_CTX *);
+extern int DANESSL_init(SSL *, const char *, const char **);
+extern void DANESSL_cleanup(SSL *);
+extern int DANESSL_add_tlsa(SSL *, uint8_t, uint8_t, const char *,
+			    unsigned const char *, size_t);
 #endif
