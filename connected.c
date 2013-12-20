@@ -11,7 +11,7 @@
 
 #include "danessl.h"
 
-void    print_errors(void)
+static void print_errors(void)
 {
     unsigned long err;
     char buffer[1024];
@@ -149,7 +149,7 @@ static int verify_callback(int ok, X509_STORE_CTX *ctx)
     return 1;
 }
 
-void usage(const char *progname)
+static void usage(const char *progname)
 {
     fprintf(stderr, "Usage: %s certificate-usage selector matching-type"
 	    " certfile \\\n\t\tCAfile service hostname [certname ...]\n",

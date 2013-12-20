@@ -1,6 +1,3 @@
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netdb.h>
 #include <unistd.h>
 #include <stdarg.h>
 
@@ -66,7 +63,7 @@ static int ssl_verify_cert_chain(SSL *s, STACK_OF(X509) *sk)
     return(i);
 }
 
-void    print_errors(void)
+static void print_errors(void)
 {
     unsigned long err;
     char buffer[1024];
@@ -169,7 +166,7 @@ static int verify_callback(int ok, X509_STORE_CTX *ctx)
     return 1;
 }
 
-STACK_OF(X509) *load_chain(const char *chainfile)
+static STACK_OF(X509) *load_chain(const char *chainfile)
 {
     BIO *bp;
     char *name = 0;
@@ -250,7 +247,7 @@ STACK_OF(X509) *load_chain(const char *chainfile)
     exit(1);
 }
 
-void usage(const char *progname)
+static void usage(const char *progname)
 {
     fprintf(stderr, "Usage: %s certificate-usage selector matching-type"
 	    " certfile \\\n\t\tCAfile chainfile hostname [certname ...]\n",
