@@ -208,7 +208,7 @@ static STACK_OF(X509) *load_chain(const char *chainfile)
 		d2i_X509_AUX : d2i_X509;
 	    X509 *cert = d(0, &p, len);
 
-	    if (cert && (p - data) != len)
+	    if (cert == 0 || (p - data) != len)
 		errtype = "certificate";
 	    else if (sk_X509_push(chain, cert) == 0) {
 		perror("malloc");
