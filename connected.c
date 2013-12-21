@@ -191,22 +191,22 @@ int main(int argc, const char *argv[])
     SSL_load_error_strings();
     SSL_library_init();
     if (DANESSL_library_init() <= 0)
-    	fatal("error initializing DANE library\n");
+	fatal("error initializing DANE library\n");
 
     /* Initialize context for DANE connections */
     if ((sctx = SSL_CTX_new(SSLv23_client_method())) == 0)
-    	fatal("error allocating SSL_CTX\n");
+	fatal("error allocating SSL_CTX\n");
     SSL_CTX_set_verify(sctx, SSL_VERIFY_NONE, verify_callback);
     if (*argv[5] && (SSL_CTX_load_verify_locations(sctx, argv[5], 0)) <= 0)
-    	fatal("error loading CAfile\n");
+	fatal("error loading CAfile\n");
     if (DANESSL_CTX_init(sctx) <= 0)
-    	fatal("error initializing SSL_CTX DANE state\n");
+	fatal("error initializing SSL_CTX DANE state\n");
 
     /* Create a connection handle */
     if ((ssl = SSL_new(sctx)) == 0)
-    	fatal("error allocating SSL handle\n");
+	fatal("error allocating SSL handle\n");
     if (DANESSL_init(ssl, argv[7], argv+7) <= 0)
-    	fatal("error initializing SSL handle DANE state\n");
+	fatal("error initializing SSL handle DANE state\n");
     if (!add_tlsa(ssl, argv))
 	fatal("error adding TLSA RR\n");
 
