@@ -16,14 +16,19 @@ key() {
 }
 
 req() {
+    local key=$1; shift
     local cn=$1; shift
 
+    key "$key"
     openssl req -new -sha256 -key "${key}.pem" 2>/dev/null \
 	-config <(printf "[req]\n%s\n%s\n[dn]\nCN=%s\n" \
 		   "prompt = no" "distinguished_name = dn" "${cn}") 
 }
 
 req_nocn() {
+    local key=$1; shift
+
+    key "$key"
     openssl req -new -sha256 -subj / -key "${key}.pem" 2>/dev/null \
 	-config <(printf "[req]\n%s\n[dn]\nCN_default =\n" \
 		   "distinguished_name = dn") 
@@ -45,8 +50,7 @@ genroot() {
     local akid=$1; shift
 
     exts=$(printf "%s\n%s\n%s\n" "$skid" "$akid" "basicConstraints = CA:true")
-    key "$key"
-    req "$cn" |
+    req "$key" "$cn" |
     	cert "$cert" "$exts" -signkey "${key}.pem" -set_serial 1 -days 30
 }
 
@@ -60,8 +64,7 @@ genca() {
     local cakey=$1; shift
 
     exts=$(printf "%s\n%s\n%s\n" "$skid" "$akid" "basicConstraints = CA:true")
-    key "$key"
-    req "$cn" |
+    req "$key" "$cn" |
     	cert "$cert" "$exts" -CA "${ca}.pem" -CAkey "${cakey}.pem" \
 	    -set_serial 2 -days 30 "$@"
 }
@@ -79,8 +82,7 @@ genee() {
 	    "basicConstraints = CA:false" \
 	    "extendedKeyUsage = serverAuth" \
 	    "subjectAltName = @alts" "DNS=${cn}")
-    key "$key"
-    req "$cn" |
+    req "$key" "$cn" |
     	cert "$cert" "$exts" -CA "${ca}.pem" -CAkey "${cakey}.pem" \
 	    -set_serial 2 -days 30 "$@"
 }
@@ -96,8 +98,7 @@ genss() {
 	    "basicConstraints = CA:true" \
 	    "extendedKeyUsage = serverAuth" \
 	    "subjectAltName = @alts" "DNS=${cn}")
-    key "$key"
-    req "$cn" |
+    req "$key" "$cn" |
 	cert "$cert" "$exts" -set_serial 1 -days 30 -signkey "${key}.pem" "$@"
 }
 
@@ -105,8 +106,7 @@ gennocn() {
     local key=$1; shift
     local cert=$1; shift
 
-    key "$key"
-    req_nocn |
+    req_nocn "$key" |
 	cert "$cert" "" -signkey "${key}.pem" -set_serial 1 -days -1 "$@"
 }
 
