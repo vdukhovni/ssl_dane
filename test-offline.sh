@@ -134,30 +134,6 @@ runtest() {
     	"$@" > /dev/null
 }
 
-runtest() {
-    local desc="$1"; shift
-    local usage="$1"; shift
-    local selector="$1"; shift
-    local mtype="$1"; shift
-    local tlsa="$1"; shift
-    local ca="$1"; shift
-    local chain="$1"; shift
-    local digest
-
-    case $mtype in
-    0) digest="";;
-    1) digest=sha256;;
-    2) digest=sha512;;
-    *) echo "bad mtype: $mtype"; exit 1;;
-    esac
-
-    printf "%d %d %d %-24s %s: " "$usage" "$selector" "$mtype" "$tlsa" "$desc"
-
-    if [ -n "$ca" ]; then ca="$ca.pem"; fi
-    "$TEST" "$usage" "$selector" "$digest" "$tlsa.pem" "$ca" "$chain.pem" \
-    	"$@" > /dev/null
-}
-
 checkpass() { runtest "$@" && { echo pass; } || { echo fail; exit 1; }; }
 checkfail() { runtest "$@" && { echo fail; exit 1; } || { echo pass; }; }
 
