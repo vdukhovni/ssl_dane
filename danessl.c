@@ -790,7 +790,9 @@ static int name_check(SSL_DANE *dane, X509 *cert)
     if (got_altname == 0) {
 	char *certid = parse_subject_name(cert);
 	if (certid != 0 && *certid && (matched = match_name(certid, dane)) != 0)
-	    dane->mhost = certid;	/* Already a copy */
+	    dane->mhost = OPENSSL_strdup(certid);
+	if (certid)
+	    OPENSSL_free(certid);
     }
     return matched;
 }
@@ -898,6 +900,11 @@ static int verify_cert(X509_STORE_CTX *ctx, void *unused_ctx)
     ssl = X509_STORE_CTX_get_ex_data(ctx, ssl_idx);
     if ((dane = SSL_get_ex_data(ssl, dane_idx)) == 0 || cert == 0)
 	return X509_verify_cert(ctx);
+
+    if (dane->mhost) {
+    	OPENSSL_free(dane->mhost);
+	dane->mhost = 0;
+    }
 
     if (dane->selectors[SSL_DANE_USAGE_FIXED_LEAF]) {
 	if ((matched = check_end_entity(ctx, dane, cert)) > 0) {
