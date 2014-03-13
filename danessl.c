@@ -848,7 +848,7 @@ static int verify_chain(X509_STORE_CTX *ctx)
 	/* Pop synthetic trust-anchor ancestors off the chain! */
 	while (--chain_length > dane->depth)
 	    X509_free(sk_X509_pop(ctx->chain));
-    } else if (issuer_rrs || leaf_rrs) {
+    } else {
 	int n = chain_length;
 
 	/*

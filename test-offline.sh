@@ -171,7 +171,7 @@ for s in 0 1; do
   checkpass "OOB root TA" 2 "$s" 0 rootcert "" chain1 "$HOST"
   checkpass "OOB TA" 2 "$s" 0 cacert2 "" eecert "$HOST"
   checkpass "in chain root TA" 2 "$s" 1 rootcert "" chain "$HOST"
-  checkfail "missing root TA" 2 "$s" 1 rootcert "" chain1 "$HOST"
+  checkfail "missing root TA" 2 "$s" 1 rootcert rootcert chain1 "$HOST"
 
   for m in 0 1 2; do
     # Usage 2 tests:
@@ -181,7 +181,7 @@ for s in 0 1; do
 	checkpass "valid TA+CA" 2 "$s" "$m" "$t" rootcert chain1 "$HOST"
 	checkpass "sub-domain match" 2 "$s" "$m" "$t" "" chain1 \
 	    whatever ".$DOMAIN"
-	checkfail "wrong name" 2 "$s" "$m" "$t" "" chain1 "whatever"
+	checkfail "wrong name" 2 "$s" "$m" "$t" rootcert chain1 "whatever"
     done
   done
 done
@@ -232,7 +232,7 @@ for s in 0 1; do
     #
     checkpass "valid EE" 3 "$s" "$m" eecert "" chain1 whatever
     checkpass "key-only EE" 3 "$s" "$m" acert "" acert whatever
-    checkfail "wrong EE" 3 "$s" "$m" cacert2 "" chain1 whatever
+    checkfail "wrong EE" 3 "$s" "$m" cacert2 rootcert chain1 whatever
   done
 done
 
