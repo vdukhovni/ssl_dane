@@ -792,7 +792,8 @@ static int name_check(SSL_DANE *dane, X509 *cert)
      */
     if (got_altname == 0) {
 	char *certid = parse_subject_name(cert);
-	if (certid != 0 && *certid && (matched = match_name(certid, dane)) != 0)
+	if (certid != 0 && *certid
+	    && (matched = match_name(certid, dane)) != 0)
 	    dane->mhost = OPENSSL_strdup(certid);
 	if (certid)
 	    OPENSSL_free(certid);
@@ -888,6 +889,27 @@ static int verify_chain(X509_STORE_CTX *ctx)
     return ctx->verify(ctx);
 }
 
+static void dane_reset(SSL_DANE *dane)
+{
+    dane->depth = -1;
+    if (dane->mhost) {
+	OPENSSL_free(dane->mhost);
+	dane->mhost = 0;
+    }
+    if (dane->roots) {
+	sk_X509_pop_free(dane->roots, X509_free);
+	dane->roots = 0;
+    }
+    if (dane->chain) {
+	sk_X509_pop_free(dane->chain, X509_free);
+	dane->chain = 0;
+    }
+    if (dane->match) {
+        X509_free(dane->match);
+	dane->match = 0;
+    }
+}
+
 static int verify_cert(X509_STORE_CTX *ctx, void *unused_ctx)
 {
     static int ssl_idx = -1;
@@ -908,10 +930,8 @@ static int verify_cert(X509_STORE_CTX *ctx, void *unused_ctx)
     if ((dane = SSL_get_ex_data(ssl, dane_idx)) == 0 || cert == 0)
 	return X509_verify_cert(ctx);
 
-    if (dane->mhost) {
-    	OPENSSL_free(dane->mhost);
-	dane->mhost = 0;
-    }
+    /* Reset for verification of a new chain, perhaps a renegotiation. */
+    dane_reset(dane);
 
     if (dane->selectors[SSL_DANE_USAGE_FIXED_LEAF]) {
 	if ((matched = check_end_entity(ctx, dane, cert)) > 0) {
@@ -1008,10 +1028,9 @@ void DANESSL_cleanup(SSL *ssl)
 	return;
     (void) SSL_set_ex_data(ssl, dane_idx, 0);
 
+    dane_reset(dane);
     if (dane->hosts)
 	list_free(dane->hosts, OPENSSL_freeFunc);
-    if (dane->mhost)
-	OPENSSL_free(dane->mhost);
     for (u = 0; u <= SSL_DANE_USAGE_LAST; ++u)
 	if (dane->selectors[u])
 	    list_free(dane->selectors[u], dane_selector_free);
@@ -1019,12 +1038,6 @@ void DANESSL_cleanup(SSL *ssl)
 	list_free(dane->pkeys, pkey_free);
     if (dane->certs)
 	list_free(dane->certs, cert_free);
-    if (dane->roots)
-	sk_X509_pop_free(dane->roots, X509_free);
-    if (dane->chain)
-	sk_X509_pop_free(dane->chain, X509_free);
-    if (dane->match)
-        X509_free(dane->match);
     OPENSSL_free(dane);
 }
 
