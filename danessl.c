@@ -153,6 +153,7 @@ typedef struct SSL_DANE {
     int            (*verify)(X509_STORE_CTX *);
     STACK_OF(X509) *roots;
     STACK_OF(X509) *chain;
+    X509           *match;
     const char     *thost;		/* TLSA base domain */
     char	   *mhost;		/* Matched, peer name */
     DANE_PKEY_LIST pkeys;
@@ -637,6 +638,8 @@ static int check_end_entity(X509_STORE_CTX *ctx, SSL_DANE *dane, X509 *cert)
 
     matched = match(dane->selectors[SSL_DANE_USAGE_FIXED_LEAF], cert, 0);
     if (matched > 0) {
+	dane->match = cert;
+	CRYPTO_add(&cert->references, 1, CRYPTO_LOCK_X509);
 	if (ctx->chain == 0) {
 	    if ((ctx->chain = sk_X509_new_null()) != 0 &&
 		sk_X509_push(ctx->chain, cert)) {
@@ -850,15 +853,16 @@ static int verify_chain(X509_STORE_CTX *ctx)
 	    X509_free(sk_X509_pop(ctx->chain));
     } else {
 	int n = chain_length;
+        X509 *xn = cert;
 
 	/*
 	 * Check for an EE match, then a CA match at depths > 0, and
 	 * finally, if the EE cert is self-issued, for a depth 0 CA match.
 	 */
 	if (leaf_rrs)
-	    matched = match(leaf_rrs, cert, 0);
+	    matched = match(leaf_rrs, xn, 0);
 	while (!matched && issuer_rrs && --n >= 0) {
-	    X509 *xn = sk_X509_value(ctx->chain, n);
+	    xn = sk_X509_value(ctx->chain, n);
 
 	    if (n > 0 || X509_check_issued(xn, xn) == X509_V_OK)
 		matched = match(issuer_rrs, xn, n);
@@ -875,7 +879,10 @@ static int verify_chain(X509_STORE_CTX *ctx)
 	    X509_STORE_CTX_set_error(ctx, X509_V_ERR_CERT_UNTRUSTED);
 	    if (!cb(0, ctx))
 		return 0;
-	}
+	} else {
+            dane->match = xn;
+            CRYPTO_add(&xn->references, 1, CRYPTO_LOCK_X509);
+        }
     }
 
     return ctx->verify(ctx);
@@ -924,6 +931,9 @@ static int verify_cert(X509_STORE_CTX *ctx, void *unused_ctx)
 	    return -1;
 	}
 	if (matched) {
+            dane->match = cert;
+            CRYPTO_add(&cert->references, 1, CRYPTO_LOCK_X509);
+
 	    /*
 	     * Check that setting the untrusted chain updates the expected
 	     * structure member at the expected offset.
@@ -1013,6 +1023,8 @@ void DANESSL_cleanup(SSL *ssl)
 	sk_X509_pop_free(dane->roots, X509_free);
     if (dane->chain)
 	sk_X509_pop_free(dane->chain, X509_free);
+    if (dane->match)
+        X509_free(dane->match);
     OPENSSL_free(dane);
 }
 
@@ -1031,6 +1043,20 @@ static DANE_HOST_LIST host_list_init(const char **src)
     }
     return head;
 }
+
+
+int DANESSL_get_match_cert(SSL *ssl, X509 **match)
+{
+    SSL_DANE *dane;
+
+    if (dane_idx < 0 || (dane = SSL_get_ex_data(ssl, dane_idx)) == 0) {
+	DANEerr(DANE_F_SSL_DANE_ADD_TLSA, DANE_R_DANE_INIT);
+	return -1;
+    }
+
+    return ((*match = dane->match) != 0);
+}
+
 
 int DANESSL_add_tlsa(
 	SSL *ssl,
@@ -1205,6 +1231,7 @@ int DANESSL_init(SSL *ssl, const char *sni_domain, const char **hostnames)
     dane->pkeys = 0;
     dane->certs = 0;
     dane->chain = 0;
+    dane->match = 0;
     dane->roots = 0;
     dane->depth = -1;
     dane->mhost = 0;			/* Future SSL control interface */
