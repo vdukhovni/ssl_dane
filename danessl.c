@@ -839,8 +839,12 @@ static int verify_chain(X509_STORE_CTX *ctx)
      * self-issued.  This should be fixed in a future OpenSSL.
      */
     if (dane->roots && sk_X509_num(dane->roots)) {
-#ifndef NO_CALLBACK_WORKAROUND
 	X509 *top = sk_X509_value(ctx->chain, dane->depth);
+
+	dane->match = top;
+	CRYPTO_add(&top->references, 1, CRYPTO_LOCK_X509);
+
+#ifndef NO_CALLBACK_WORKAROUND
 
 	if (X509_check_issued(top, top) != X509_V_OK) {
 	    ctx->error_depth = dane->depth;
@@ -951,9 +955,6 @@ static int verify_cert(X509_STORE_CTX *ctx, void *unused_ctx)
 	    return -1;
 	}
 	if (matched) {
-            dane->match = cert;
-            CRYPTO_add(&cert->references, 1, CRYPTO_LOCK_X509);
-
 	    /*
 	     * Check that setting the untrusted chain updates the expected
 	     * structure member at the expected offset.
