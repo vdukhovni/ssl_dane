@@ -1,3 +1,7 @@
+/*
+ *  Author: Viktor Dukhovni
+ *  License: THIS CODE IS IN THE PUBLIC DOMAIN.
+ */
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>

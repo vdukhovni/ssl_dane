@@ -1,3 +1,5 @@
+THIS CODE IS IN THE PUBLIC DOMAIN.
+
 Work-in progress.  DANE support for OpenSSL.
 
 This generalizes the SMTP specific DANE support in Postfix by

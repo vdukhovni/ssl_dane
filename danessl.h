@@ -1,3 +1,7 @@
+/*
+ *  Author: Viktor Dukhovni
+ *  License: THIS CODE IS IN THE PUBLIC DOMAIN.
+ */
 #ifndef HEADER_SSL_DANE_H
 #define HEADER_SSL_DANE_H
 

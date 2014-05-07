@@ -1,3 +1,7 @@
+/*
+ *  Author: Viktor Dukhovni
+ *  License: THIS CODE IS IN THE PUBLIC DOMAIN.
+ */
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
