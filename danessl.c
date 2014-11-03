@@ -558,7 +558,7 @@ static int set_trust_anchor(X509_STORE_CTX *ctx, SSL_DANE *dane, X509 *cert)
      */
     if (X509_check_issued(cert, cert) == X509_V_OK) {
 	dane->depth = 0;
-	matched = match(dane->selectors[DANESSL_USAGE_TRUSTED_CA], cert, 0);
+	matched = match(dane->selectors[DANESSL_USAGE_DANE_TA], cert, 0);
 	if (matched > 0 && !grow_chain(dane, TRUSTED, cert))
 	    matched = -1;
 	return matched;
@@ -594,7 +594,7 @@ static int set_trust_anchor(X509_STORE_CTX *ctx, SSL_DANE *dane, X509 *cert)
 	ca = sk_X509_delete(in, i);
 
 	/* If not a trust anchor, record untrusted ca and continue. */
-	if ((matched = match(dane->selectors[DANESSL_USAGE_TRUSTED_CA], ca,
+	if ((matched = match(dane->selectors[DANESSL_USAGE_DANE_TA], ca,
 			     depth + 1)) == 0) {
 	    if (grow_chain(dane, UNTRUSTED, ca)) {
 		if (!X509_check_issued(ca, ca) == X509_V_OK) {
@@ -640,7 +640,7 @@ static int check_end_entity(X509_STORE_CTX *ctx, SSL_DANE *dane, X509 *cert)
 {
     int matched;
 
-    matched = match(dane->selectors[DANESSL_USAGE_FIXED_LEAF], cert, 0);
+    matched = match(dane->selectors[DANESSL_USAGE_DANE_EE], cert, 0);
     if (matched > 0) {
 	dane->match = cert;
 	CRYPTO_add(&cert->references, 1, CRYPTO_LOCK_X509);
@@ -817,8 +817,8 @@ static int verify_chain(X509_STORE_CTX *ctx)
     int matched = 0;
     int chain_length = sk_X509_num(ctx->chain);
 
-    issuer_rrs = dane->selectors[DANESSL_USAGE_LIMIT_ISSUER];
-    leaf_rrs = dane->selectors[DANESSL_USAGE_LIMIT_LEAF];
+    issuer_rrs = dane->selectors[DANESSL_USAGE_PKIX_TA];
+    leaf_rrs = dane->selectors[DANESSL_USAGE_PKIX_EE];
     ctx->verify = dane->verify;
 
     if ((matched = name_check(dane, cert)) < 0) {
@@ -941,7 +941,7 @@ static int verify_cert(X509_STORE_CTX *ctx, void *unused_ctx)
     /* Reset for verification of a new chain, perhaps a renegotiation. */
     dane_reset(dane);
 
-    if (dane->selectors[DANESSL_USAGE_FIXED_LEAF]) {
+    if (dane->selectors[DANESSL_USAGE_DANE_EE]) {
 	if ((matched = check_end_entity(ctx, dane, cert)) > 0) {
 	    ctx->error_depth = 0;
 	    ctx->current_cert = cert;
@@ -953,7 +953,7 @@ static int verify_cert(X509_STORE_CTX *ctx, void *unused_ctx)
 	}
     }
 
-    if (dane->selectors[DANESSL_USAGE_TRUSTED_CA]) {
+    if (dane->selectors[DANESSL_USAGE_DANE_TA]) {
 	if ((matched = set_trust_anchor(ctx, dane, cert)) < 0) {
 	    X509_STORE_CTX_set_error(ctx, X509_V_ERR_OUT_OF_MEM);
 	    return -1;
@@ -1155,7 +1155,7 @@ int DANESSL_add_tlsa(
 		DANEerr(DANESSL_F_ADD_TLSA, DANESSL_R_BAD_CERT_PKEY);
 		return 0;
 	    }
-	    if (usage == DANESSL_USAGE_TRUSTED_CA)
+	    if (usage == DANESSL_USAGE_DANE_TA)
 		xklistinit(xlist, DANE_CERT_LIST, x, X509_free);
 	    break;
 
@@ -1166,7 +1166,7 @@ int DANESSL_add_tlsa(
 		DANEerr(DANESSL_F_ADD_TLSA, DANESSL_R_BAD_PKEY);
 		return 0;
 	    }
-	    if (usage == DANESSL_USAGE_TRUSTED_CA)
+	    if (usage == DANESSL_USAGE_DANE_TA)
 		xklistinit(klist, DANE_PKEY_LIST, k, EVP_PKEY_free);
 	    break;
 	}

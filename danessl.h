@@ -12,11 +12,11 @@
  * Certificate usages:
  * https://tools.ietf.org/html/rfc6698#section-2.1.1
  */
-#define DANESSL_USAGE_LIMIT_ISSUER	0
-#define DANESSL_USAGE_LIMIT_LEAF	1
-#define DANESSL_USAGE_TRUSTED_CA	2
-#define DANESSL_USAGE_FIXED_LEAF	3
-#define DANESSL_USAGE_LAST		DANESSL_USAGE_FIXED_LEAF
+#define DANESSL_USAGE_PKIX_TA	0
+#define DANESSL_USAGE_PKIX_EE	1
+#define DANESSL_USAGE_DANE_TA	2
+#define DANESSL_USAGE_DANE_EE	3
+#define DANESSL_USAGE_LAST		DANESSL_USAGE_DANE_EE
 
 /*-
  * Selectors:
