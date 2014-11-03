@@ -26,6 +26,15 @@
 #define DANESSL_SELECTOR_SPKI		1
 #define DANESSL_SELECTOR_LAST		DANESSL_SELECTOR_SPKI
 
+/*-
+ * Matching types:
+ * https://tools.ietf.org/html/rfc6698#section-2.1.3
+ */
+#define DANESSL_MATCHING_FULL		0
+#define DANESSL_MATCHING_2256		1
+#define DANESSL_MATCHING_2512		2
+#define DANESSL_MATCHING_LAST		DANESSL_MATCHING_2512
+
 extern int DANESSL_library_init(void);
 extern int DANESSL_CTX_init(SSL_CTX *);
 extern int DANESSL_init(SSL *, const char *, const char **);
