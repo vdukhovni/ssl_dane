@@ -157,14 +157,15 @@ typedef struct SSL_DANE {
     int            (*verify)(X509_STORE_CTX *);
     STACK_OF(X509) *roots;
     STACK_OF(X509) *chain;
-    X509           *match;
+    X509           *match;		/* Matched cert */
     const char     *thost;		/* TLSA base domain */
-    char	   *mhost;		/* Matched, peer name */
+    char	   *mhost;		/* Matched peer name */
     DANE_PKEY_LIST pkeys;
     DANE_CERT_LIST certs;
     DANE_HOST_LIST hosts;
     DANE_SELECTOR_LIST selectors[DANESSL_USAGE_LAST + 1];
     int            depth;
+    int		   mdpth;		/* Depth of matched cert */
     int		   multi;		/* Multi-label wildcards? */
     int		   count;		/* Number of TLSA records */
 } SSL_DANE;
@@ -642,6 +643,7 @@ static int check_end_entity(X509_STORE_CTX *ctx, SSL_DANE *dane, X509 *cert)
 
     matched = match(dane->selectors[DANESSL_USAGE_DANE_EE], cert, 0);
     if (matched > 0) {
+	dane->mdpth = 0;
 	dane->match = cert;
 	CRYPTO_add(&cert->references, 1, CRYPTO_LOCK_X509);
 	if (ctx->chain == 0) {
@@ -845,6 +847,7 @@ static int verify_chain(X509_STORE_CTX *ctx)
     if (dane->roots && sk_X509_num(dane->roots)) {
 	X509 *top = sk_X509_value(ctx->chain, dane->depth);
 
+	dane->mdpth = dane->depth;
 	dane->match = top;
 	CRYPTO_add(&top->references, 1, CRYPTO_LOCK_X509);
 
@@ -889,6 +892,7 @@ static int verify_chain(X509_STORE_CTX *ctx)
 	    if (!cb(0, ctx))
 		return 0;
 	} else {
+	    dane->mdpth = n;
             dane->match = xn;
             CRYPTO_add(&xn->references, 1, CRYPTO_LOCK_X509);
         }
@@ -916,6 +920,7 @@ static void dane_reset(SSL_DANE *dane)
         X509_free(dane->match);
 	dane->match = 0;
     }
+    dane->mdpth = -1;
 }
 
 static int verify_cert(X509_STORE_CTX *ctx, void *unused_ctx)
@@ -1063,7 +1068,7 @@ static DANE_HOST_LIST host_list_init(const char **src)
 }
 
 
-int DANESSL_get_match_cert(SSL *ssl, X509 **match)
+int DANESSL_get_match_cert(SSL *ssl, X509 **match, const char **mhost, int *depth)
 {
     SSL_DANE *dane;
 
@@ -1072,7 +1077,16 @@ int DANESSL_get_match_cert(SSL *ssl, X509 **match)
 	return -1;
     }
 
-    return ((*match = dane->match) != 0);
+    if (dane->match) {
+	if (match)
+	    *match = dane->match;
+	if (mhost)
+	    *mhost = dane->mhost;
+	if (depth)
+	    *depth = dane->mdpth;
+    }
+
+    return (dane->match != 0);
 }
 
 
@@ -1253,8 +1267,10 @@ int DANESSL_init(SSL *ssl, const char *sni_domain, const char **hostnames)
     dane->roots = 0;
     dane->depth = -1;
     dane->mhost = 0;			/* Future SSL control interface */
+    dane->mdpth = 0;			/* Future SSL control interface */
     dane->multi = 0;			/* Future SSL control interface */
     dane->count = 0;
+    dane->hosts = 0;
 
     for (i = 0; i <= DANESSL_USAGE_LAST; ++i)
 	dane->selectors[i] = 0;
