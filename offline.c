@@ -116,13 +116,13 @@ static int add_tlsa(SSL *ssl, const char *argv[])
      * Extract ASN.1 DER form of certificate or public key.
      */
     switch (s) {
-    case SSL_DANE_SELECTOR_CERT:
+    case DANESSL_SELECTOR_CERT:
 	len = i2d_X509(cert, NULL);
 	buf2 = buf = (unsigned char *) OPENSSL_malloc(len);
 	if (buf)
 	    i2d_X509(cert, &buf2);
 	break;
-    case SSL_DANE_SELECTOR_SPKI:
+    case DANESSL_SELECTOR_SPKI:
 	len = i2d_X509_PUBKEY(X509_get_X509_PUBKEY(cert), NULL);
 	buf2 = buf = (unsigned char *) OPENSSL_malloc(len);
 	if (buf)
@@ -317,8 +317,8 @@ int main(int argc, const char *argv[])
     chain = load_chain(argv[6]);
     SSL_set_connect_state(ssl);
     ssl_verify_cert_chain(ssl, chain);
-    printf("verify status: %ld\n", ok = SSL_get_verify_result(ssl));
     print_errors();
+    printf("verify status: %ld\n", ok = SSL_get_verify_result(ssl));
 
     /* Cleanup */
     DANESSL_cleanup(ssl);

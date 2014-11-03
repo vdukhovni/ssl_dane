@@ -21,67 +21,67 @@
 
 #include "danessl.h"
 
-#define DANE_F_ADD_SKID			100
-#define DANE_F_CHECK_END_ENTITY		101
-#define DANE_F_GROW_CHAIN		102
-#define DANE_F_LIST_ALLOC		103
-#define DANE_F_MATCH			104
-#define DANE_F_PUSH_EXT			105
-#define DANE_F_SET_TRUST_ANCHOR		106
-#define DANE_F_SSL_CTX_DANE_INIT	107
-#define DANE_F_SSL_DANE_ADD_TLSA	108
-#define DANE_F_SSL_DANE_INIT		109
-#define DANE_F_SSL_DANE_LIBRARY_INIT	110
-#define DANE_F_VERIFY_CERT		111
-#define DANE_F_WRAP_CERT		112
+#define DANESSL_F_ADD_SKID		100
+#define DANESSL_F_ADD_TLSA		101
+#define DANESSL_F_CHECK_END_ENTITY	102
+#define DANESSL_F_CTX_INIT		103
+#define DANESSL_F_GROW_CHAIN		104
+#define DANESSL_F_INIT			105
+#define DANESSL_F_LIBRARY_INIT		106
+#define DANESSL_F_LIST_ALLOC		107
+#define DANESSL_F_MATCH			108
+#define DANESSL_F_PUSH_EXT		109
+#define DANESSL_F_SET_TRUST_ANCHOR	110
+#define DANESSL_F_VERIFY_CERT		111
+#define DANESSL_F_WRAP_CERT		112
 
-#define DANE_R_BAD_CERT			100
-#define DANE_R_BAD_CERT_PKEY		101
-#define DANE_R_BAD_DATA_LENGTH		102
-#define DANE_R_BAD_DIGEST		103
-#define DANE_R_BAD_NULL_DATA		104
-#define DANE_R_BAD_PKEY			105
-#define DANE_R_BAD_SELECTOR		106
-#define DANE_R_BAD_USAGE		107
-#define DANE_R_DANE_INIT		108
-#define DANE_R_DANE_SUPPORT		109
-#define DANE_R_LIBRARY_INIT		110
-#define DANE_R_NOSIGN_KEY		111
-#define DANE_R_SCTX_INIT		112
+#define DANESSL_R_BAD_CERT		100
+#define DANESSL_R_BAD_CERT_PKEY		101
+#define DANESSL_R_BAD_DATA_LENGTH	102
+#define DANESSL_R_BAD_DIGEST		103
+#define DANESSL_R_BAD_NULL_DATA		104
+#define DANESSL_R_BAD_PKEY		105
+#define DANESSL_R_BAD_SELECTOR		106
+#define DANESSL_R_BAD_USAGE		107
+#define DANESSL_R_INIT			108
+#define DANESSL_R_LIBRARY_INIT		109
+#define DANESSL_R_NOSIGN_KEY		110
+#define DANESSL_R_SCTX_INIT		111
+#define DANESSL_R_SUPPORT		112
 
 #ifndef OPENSSL_NO_ERR
-#define	DANE_F_PLACEHOLDER		0		/* FIRST! Value TBD */
+#define	DANESSL_F_PLACEHOLDER		0		/* FIRST! Value TBD */
 static ERR_STRING_DATA dane_str_functs[] = {
-    {DANE_F_PLACEHOLDER,		"DANE library"},	/* FIRST!!! */
-    {DANE_F_ADD_SKID,			"add_skid"},
-    {DANE_F_CHECK_END_ENTITY,		"check_end_entity"},
-    {DANE_F_GROW_CHAIN,			"grow_chain"},
-    {DANE_F_LIST_ALLOC,			"list_alloc"},
-    {DANE_F_MATCH,			"match"},
-    {DANE_F_PUSH_EXT,			"push_ext"},
-    {DANE_F_SET_TRUST_ANCHOR,		"set_trust_anchor"},
-    {DANE_F_SSL_CTX_DANE_INIT,		"SSL_CTX_dane_init"},
-    {DANE_F_SSL_DANE_ADD_TLSA,		"SSL_dane_add_tlsa"},
-    {DANE_F_SSL_DANE_INIT,		"SSL_dane_init"},
-    {DANE_F_SSL_DANE_LIBRARY_INIT,	"SSL_dane_library_init"},
-    {DANE_F_VERIFY_CERT,		"verify_cert"},
-    {DANE_F_WRAP_CERT,			"wrap_cert"},
+    {DANESSL_F_PLACEHOLDER,		"DANE library"},	/* FIRST!!! */
+    {DANESSL_F_ADD_SKID,		"add_skid"},
+    {DANESSL_F_ADD_TLSA,		"DANESSL_add_tlsa"},
+    {DANESSL_F_CHECK_END_ENTITY,	"check_end_entity"},
+    {DANESSL_F_CTX_INIT,		"DANESSL_CTX_init"},
+    {DANESSL_F_GROW_CHAIN,		"grow_chain"},
+    {DANESSL_F_INIT,			"DANESSL_init"},
+    {DANESSL_F_LIBRARY_INIT,		"DANESSL_library_init"},
+    {DANESSL_F_LIST_ALLOC,		"list_alloc"},
+    {DANESSL_F_MATCH,			"match"},
+    {DANESSL_F_PUSH_EXT,		"push_ext"},
+    {DANESSL_F_SET_TRUST_ANCHOR,	"set_trust_anchor"},
+    {DANESSL_F_VERIFY_CERT,		"verify_cert"},
+    {DANESSL_F_WRAP_CERT,		"wrap_cert"},
     {0,					NULL}
 };
 static ERR_STRING_DATA dane_str_reasons[] = {
-    {DANE_R_BAD_CERT,		"Bad TLSA record certificate"},
-    {DANE_R_BAD_CERT_PKEY,	"Bad TLSA record certificate public key"},
-    {DANE_R_BAD_DATA_LENGTH,	"Bad TLSA record digest length"},
-    {DANE_R_BAD_DIGEST,		"Bad TLSA record digest"},
-    {DANE_R_BAD_NULL_DATA,	"Bad TLSA record null data"},
-    {DANE_R_BAD_PKEY,		"Bad TLSA record public key"},
-    {DANE_R_BAD_SELECTOR,	"Bad TLSA record selector"},
-    {DANE_R_BAD_USAGE,		"Bad TLSA record usage"},
-    {DANE_R_DANE_INIT,		"SSL_dane_init() required"},
-    {DANE_R_DANE_SUPPORT,	"DANE library features not supported"},
-    {DANE_R_LIBRARY_INIT,	"SSL_dane_library_init() required"},
-    {DANE_R_SCTX_INIT,		"SSL_CTX_dane_init() required"},
-    {DANE_R_NOSIGN_KEY,		"Certificate usage 2 requires EC support"},
+    {DANESSL_R_BAD_CERT,	"Bad TLSA record certificate"},
+    {DANESSL_R_BAD_CERT_PKEY,	"Bad TLSA record certificate public key"},
+    {DANESSL_R_BAD_DATA_LENGTH,	"Bad TLSA record digest length"},
+    {DANESSL_R_BAD_DIGEST,	"Bad TLSA record digest"},
+    {DANESSL_R_BAD_NULL_DATA,	"Bad TLSA record null data"},
+    {DANESSL_R_BAD_PKEY,	"Bad TLSA record public key"},
+    {DANESSL_R_BAD_SELECTOR,	"Bad TLSA record selector"},
+    {DANESSL_R_BAD_USAGE,	"Bad TLSA record usage"},
+    {DANESSL_R_INIT,		"DANESSL_init() required"},
+    {DANESSL_R_LIBRARY_INIT,	"DANESSL_library_init() required"},
+    {DANESSL_R_NOSIGN_KEY,	"Certificate usage 2 requires EC support"},
+    {DANESSL_R_SCTX_INIT,	"DANESSL_CTX_init() required"},
+    {DANESSL_R_SUPPORT,		"DANE library features not supported"},
     {0,				NULL}
 };
 #endif
@@ -163,7 +163,7 @@ typedef struct SSL_DANE {
     DANE_PKEY_LIST pkeys;
     DANE_CERT_LIST certs;
     DANE_HOST_LIST hosts;
-    DANE_SELECTOR_LIST selectors[SSL_DANE_USAGE_LAST + 1];
+    DANE_SELECTOR_LIST selectors[DANESSL_USAGE_LAST + 1];
     int            depth;
     int		   multi;		/* Multi-label wildcards? */
     int		   count;		/* Number of TLSA records */
@@ -182,8 +182,8 @@ static int match(DANE_SELECTOR_LIST slist, X509 *cert, int depth)
      * pkey digest or a certificate digest.  We return MATCHED_PKEY or
      * MATCHED_CERT accordingly.
      */
-#define MATCHED_CERT (SSL_DANE_SELECTOR_CERT + 1)
-#define MATCHED_PKEY (SSL_DANE_SELECTOR_SPKI + 1)
+#define MATCHED_CERT (DANESSL_SELECTOR_CERT + 1)
+#define MATCHED_PKEY (DANESSL_SELECTOR_SPKI + 1)
 
     /*
      * Loop over each selector, mtype, and associated data element looking
@@ -200,13 +200,13 @@ static int match(DANE_SELECTOR_LIST slist, X509 *cert, int depth)
 	 * Extract ASN.1 DER form of certificate or public key.
 	 */
 	switch (slist->value->selector) {
-	case SSL_DANE_SELECTOR_CERT:
+	case DANESSL_SELECTOR_CERT:
 	    len = i2d_X509(cert, NULL);
 	    buf2 = buf = (unsigned char *) OPENSSL_malloc(len);
 	    if (buf)
 		i2d_X509(cert, &buf2);
 	    break;
-	case SSL_DANE_SELECTOR_SPKI:
+	case DANESSL_SELECTOR_SPKI:
 	    len = i2d_X509_PUBKEY(X509_get_X509_PUBKEY(cert), NULL);
 	    buf2 = buf = (unsigned char *) OPENSSL_malloc(len);
 	    if (buf)
@@ -215,7 +215,7 @@ static int match(DANE_SELECTOR_LIST slist, X509 *cert, int depth)
 	}
 
 	if (buf == NULL) {
-	    DANEerr(DANE_F_MATCH, ERR_R_MALLOC_FAILURE);
+	    DANEerr(DANESSL_F_MATCH, ERR_R_MALLOC_FAILURE);
 	    return 0;
 	}
 	OPENSSL_assert(buf2 - buf == len);
@@ -260,7 +260,7 @@ static int push_ext(X509 *cert, X509_EXTENSION *ext)
 	    return 1;
 	X509_EXTENSION_free(ext);
     }
-    DANEerr(DANE_F_PUSH_EXT, ERR_R_MALLOC_FAILURE);
+    DANEerr(DANESSL_F_PUSH_EXT, ERR_R_MALLOC_FAILURE);
     return 0;
 }
 
@@ -370,11 +370,11 @@ static int grow_chain(SSL_DANE *dane, int trusted, X509 *cert)
 
     if (trusted && serverAuth == 0 &&
        (serverAuth = OBJ_nid2obj(NID_server_auth)) == 0) {
-	DANEerr(DANE_F_GROW_CHAIN, ERR_R_MALLOC_FAILURE);
+	DANEerr(DANESSL_F_GROW_CHAIN, ERR_R_MALLOC_FAILURE);
 	return 0;
     }
     if (!*xs && (*xs = sk_X509_new_null()) == 0) {
-	DANEerr(DANE_F_GROW_CHAIN, ERR_R_MALLOC_FAILURE);
+	DANEerr(DANESSL_F_GROW_CHAIN, ERR_R_MALLOC_FAILURE);
 	return 0;
     }
 
@@ -384,7 +384,7 @@ static int grow_chain(SSL_DANE *dane, int trusted, X509 *cert)
 	CRYPTO_add(&cert->references, 1, CRYPTO_LOCK_X509);
 	if (!sk_X509_push(*xs, cert)) {
 	    X509_free(cert);
-	    DANEerr(DANE_F_GROW_CHAIN, ERR_R_MALLOC_FAILURE);
+	    DANEerr(DANESSL_F_GROW_CHAIN, ERR_R_MALLOC_FAILURE);
 	    return 0;
 	}
     }
@@ -558,7 +558,7 @@ static int set_trust_anchor(X509_STORE_CTX *ctx, SSL_DANE *dane, X509 *cert)
      */
     if (X509_check_issued(cert, cert) == X509_V_OK) {
 	dane->depth = 0;
-	matched = match(dane->selectors[SSL_DANE_USAGE_TRUSTED_CA], cert, 0);
+	matched = match(dane->selectors[DANESSL_USAGE_TRUSTED_CA], cert, 0);
 	if (matched > 0 && !grow_chain(dane, TRUSTED, cert))
 	    matched = -1;
 	return matched;
@@ -566,7 +566,7 @@ static int set_trust_anchor(X509_STORE_CTX *ctx, SSL_DANE *dane, X509 *cert)
 
     /* Make a shallow copy of the input untrusted chain. */
     if ((in = sk_X509_dup(in)) == 0) {
-	DANEerr(DANE_F_SET_TRUST_ANCHOR, ERR_R_MALLOC_FAILURE);
+	DANEerr(DANESSL_F_SET_TRUST_ANCHOR, ERR_R_MALLOC_FAILURE);
 	return -1;
     }
 
@@ -594,7 +594,7 @@ static int set_trust_anchor(X509_STORE_CTX *ctx, SSL_DANE *dane, X509 *cert)
 	ca = sk_X509_delete(in, i);
 
 	/* If not a trust anchor, record untrusted ca and continue. */
-	if ((matched = match(dane->selectors[SSL_DANE_USAGE_TRUSTED_CA], ca,
+	if ((matched = match(dane->selectors[DANESSL_USAGE_TRUSTED_CA], ca,
 			     depth + 1)) == 0) {
 	    if (grow_chain(dane, UNTRUSTED, ca)) {
 		if (!X509_check_issued(ca, ca) == X509_V_OK) {
@@ -615,7 +615,7 @@ static int set_trust_anchor(X509_STORE_CTX *ctx, SSL_DANE *dane, X509 *cert)
 		if (takey)
 		    EVP_PKEY_free(takey);
 		else
-		    DANEerr(DANE_F_SET_TRUST_ANCHOR, ERR_R_MALLOC_FAILURE);
+		    DANEerr(DANESSL_F_SET_TRUST_ANCHOR, ERR_R_MALLOC_FAILURE);
 		matched = -1;
 	    }
 	}
@@ -640,7 +640,7 @@ static int check_end_entity(X509_STORE_CTX *ctx, SSL_DANE *dane, X509 *cert)
 {
     int matched;
 
-    matched = match(dane->selectors[SSL_DANE_USAGE_FIXED_LEAF], cert, 0);
+    matched = match(dane->selectors[DANESSL_USAGE_FIXED_LEAF], cert, 0);
     if (matched > 0) {
 	dane->match = cert;
 	CRYPTO_add(&cert->references, 1, CRYPTO_LOCK_X509);
@@ -649,7 +649,7 @@ static int check_end_entity(X509_STORE_CTX *ctx, SSL_DANE *dane, X509 *cert)
 		sk_X509_push(ctx->chain, cert)) {
 		CRYPTO_add(&cert->references, 1, CRYPTO_LOCK_X509);
 	    } else {
-		DANEerr(DANE_F_CHECK_END_ENTITY, ERR_R_MALLOC_FAILURE);
+		DANEerr(DANESSL_F_CHECK_END_ENTITY, ERR_R_MALLOC_FAILURE);
 		return -1;
 	    }
 	}
@@ -817,8 +817,8 @@ static int verify_chain(X509_STORE_CTX *ctx)
     int matched = 0;
     int chain_length = sk_X509_num(ctx->chain);
 
-    issuer_rrs = dane->selectors[SSL_DANE_USAGE_LIMIT_ISSUER];
-    leaf_rrs = dane->selectors[SSL_DANE_USAGE_LIMIT_LEAF];
+    issuer_rrs = dane->selectors[DANESSL_USAGE_LIMIT_ISSUER];
+    leaf_rrs = dane->selectors[DANESSL_USAGE_LIMIT_LEAF];
     ctx->verify = dane->verify;
 
     if ((matched = name_check(dane, cert)) < 0) {
@@ -930,7 +930,7 @@ static int verify_cert(X509_STORE_CTX *ctx, void *unused_ctx)
     if (ssl_idx < 0)
 	ssl_idx = SSL_get_ex_data_X509_STORE_CTX_idx();
     if (dane_idx < 0) {
-	DANEerr(DANE_F_VERIFY_CERT, ERR_R_MALLOC_FAILURE);
+	DANEerr(DANESSL_F_VERIFY_CERT, ERR_R_MALLOC_FAILURE);
 	return -1;
     }
 
@@ -941,7 +941,7 @@ static int verify_cert(X509_STORE_CTX *ctx, void *unused_ctx)
     /* Reset for verification of a new chain, perhaps a renegotiation. */
     dane_reset(dane);
 
-    if (dane->selectors[SSL_DANE_USAGE_FIXED_LEAF]) {
+    if (dane->selectors[DANESSL_USAGE_FIXED_LEAF]) {
 	if ((matched = check_end_entity(ctx, dane, cert)) > 0) {
 	    ctx->error_depth = 0;
 	    ctx->current_cert = cert;
@@ -953,7 +953,7 @@ static int verify_cert(X509_STORE_CTX *ctx, void *unused_ctx)
 	}
     }
 
-    if (dane->selectors[SSL_DANE_USAGE_TRUSTED_CA]) {
+    if (dane->selectors[DANESSL_USAGE_TRUSTED_CA]) {
 	if ((matched = set_trust_anchor(ctx, dane, cert)) < 0) {
 	    X509_STORE_CTX_set_error(ctx, X509_V_ERR_OUT_OF_MEM);
 	    return -1;
@@ -986,12 +986,12 @@ static dane_list list_alloc(size_t vsize)
     dane_list l;
 
     if (value == 0) {
-	DANEerr(DANE_F_LIST_ALLOC, ERR_R_MALLOC_FAILURE);
+	DANEerr(DANESSL_F_LIST_ALLOC, ERR_R_MALLOC_FAILURE);
 	return 0;
     }
     if ((l = (dane_list) OPENSSL_malloc(sizeof(*l))) == 0) {
 	OPENSSL_free(value);
-	DANEerr(DANE_F_LIST_ALLOC, ERR_R_MALLOC_FAILURE);
+	DANEerr(DANESSL_F_LIST_ALLOC, ERR_R_MALLOC_FAILURE);
 	return 0;
     }
     l->next = 0;
@@ -1036,7 +1036,7 @@ void DANESSL_cleanup(SSL *ssl)
     dane_reset(dane);
     if (dane->hosts)
 	list_free(dane->hosts, OPENSSL_freeFunc);
-    for (u = 0; u <= SSL_DANE_USAGE_LAST; ++u)
+    for (u = 0; u <= DANESSL_USAGE_LAST; ++u)
 	if (dane->selectors[u])
 	    list_free(dane->selectors[u], dane_selector_free);
     if (dane->pkeys)
@@ -1068,7 +1068,7 @@ int DANESSL_get_match_cert(SSL *ssl, X509 **match)
     SSL_DANE *dane;
 
     if (dane_idx < 0 || (dane = SSL_get_ex_data(ssl, dane_idx)) == 0) {
-	DANEerr(DANE_F_SSL_DANE_ADD_TLSA, DANE_R_DANE_INIT);
+	DANEerr(DANESSL_F_ADD_TLSA, DANESSL_R_INIT);
 	return -1;
     }
 
@@ -1094,28 +1094,28 @@ int DANESSL_add_tlsa(
     const EVP_MD *md = 0;
 
     if (dane_idx < 0 || (dane = SSL_get_ex_data(ssl, dane_idx)) == 0) {
-	DANEerr(DANE_F_SSL_DANE_ADD_TLSA, DANE_R_DANE_INIT);
+	DANEerr(DANESSL_F_ADD_TLSA, DANESSL_R_INIT);
 	return -1;
     }
 
-    if (usage > SSL_DANE_USAGE_LAST) {
-	DANEerr(DANE_F_SSL_DANE_ADD_TLSA, DANE_R_BAD_USAGE);
+    if (usage > DANESSL_USAGE_LAST) {
+	DANEerr(DANESSL_F_ADD_TLSA, DANESSL_R_BAD_USAGE);
 	return 0;
     }
-    if (selector > SSL_DANE_SELECTOR_LAST) {
-	DANEerr(DANE_F_SSL_DANE_ADD_TLSA, DANE_R_BAD_SELECTOR);
+    if (selector > DANESSL_SELECTOR_LAST) {
+	DANEerr(DANESSL_F_ADD_TLSA, DANESSL_R_BAD_SELECTOR);
 	return 0;
     }
     if (mdname && (md = EVP_get_digestbyname(mdname)) == 0) {
-	DANEerr(DANE_F_SSL_DANE_ADD_TLSA, DANE_R_BAD_DIGEST);
+	DANEerr(DANESSL_F_ADD_TLSA, DANESSL_R_BAD_DIGEST);
 	return 0;
     }
     if (!data) {
-	DANEerr(DANE_F_SSL_DANE_ADD_TLSA, DANE_R_BAD_NULL_DATA);
+	DANEerr(DANESSL_F_ADD_TLSA, DANESSL_R_BAD_NULL_DATA);
 	return 0;
     }
     if (mdname && dlen != EVP_MD_size(md)) {
-	DANEerr(DANE_F_SSL_DANE_ADD_TLSA, DANE_R_BAD_DATA_LENGTH);
+	DANEerr(DANESSL_F_ADD_TLSA, DANESSL_R_BAD_DATA_LENGTH);
 	return 0;
     }
 
@@ -1127,7 +1127,7 @@ int DANESSL_add_tlsa(
 #define xklistinit(lvar, ltype, var, freeFunc) do { \
 	    (lvar) = (ltype) OPENSSL_malloc(sizeof(*(lvar))); \
 	    if ((lvar) == 0) { \
-		DANEerr(DANE_F_SSL_DANE_ADD_TLSA, ERR_R_MALLOC_FAILURE); \
+		DANEerr(DANESSL_F_ADD_TLSA, ERR_R_MALLOC_FAILURE); \
 		freeFunc((var)); \
 		return 0; \
 	    } \
@@ -1141,32 +1141,32 @@ int DANESSL_add_tlsa(
 	} while (0)
 
 	switch (selector) {
-	case SSL_DANE_SELECTOR_CERT:
+	case DANESSL_SELECTOR_CERT:
 	    if (!d2i_X509(&x, &p, dlen) || dlen != p - data) {
 		if (x)
 		    X509_free(x);
-		DANEerr(DANE_F_SSL_DANE_ADD_TLSA, DANE_R_BAD_CERT);
+		DANEerr(DANESSL_F_ADD_TLSA, DANESSL_R_BAD_CERT);
 		return 0;
 	    }
 	    k = X509_get_pubkey(x);
 	    EVP_PKEY_free(k);
 	    if (k == 0) {
 		X509_free(x);
-		DANEerr(DANE_F_SSL_DANE_ADD_TLSA, DANE_R_BAD_CERT_PKEY);
+		DANEerr(DANESSL_F_ADD_TLSA, DANESSL_R_BAD_CERT_PKEY);
 		return 0;
 	    }
-	    if (usage == SSL_DANE_USAGE_TRUSTED_CA)
+	    if (usage == DANESSL_USAGE_TRUSTED_CA)
 		xklistinit(xlist, DANE_CERT_LIST, x, X509_free);
 	    break;
 
-	case SSL_DANE_SELECTOR_SPKI:
+	case DANESSL_SELECTOR_SPKI:
 	    if (!d2i_PUBKEY(&k, &p, dlen) || dlen != p - data) {
 		if (k)
 		    EVP_PKEY_free(k);
-		DANEerr(DANE_F_SSL_DANE_ADD_TLSA, DANE_R_BAD_PKEY);
+		DANEerr(DANESSL_F_ADD_TLSA, DANESSL_R_BAD_PKEY);
 		return 0;
 	    }
-	    if (usage == SSL_DANE_USAGE_TRUSTED_CA)
+	    if (usage == DANESSL_USAGE_TRUSTED_CA)
 		xklistinit(klist, DANE_PKEY_LIST, k, EVP_PKEY_free);
 	    break;
 	}
@@ -1223,12 +1223,12 @@ int DANESSL_init(SSL *ssl, const char *sni_domain, const char **hostnames)
     SSL_CTX *sctx = SSL_get_SSL_CTX(ssl);
 
     if (sctx->app_verify_callback != verify_cert) {
-	DANEerr(DANE_F_SSL_DANE_INIT, DANE_R_SCTX_INIT);
+	DANEerr(DANESSL_F_INIT, DANESSL_R_SCTX_INIT);
 	return -1;
     }
 #else
     if (dane_idx < 0) {
-	DANEerr(DANE_F_SSL_DANE_INIT, DANE_R_LIBRARY_INIT);
+	DANEerr(DANESSL_F_INIT, DANESSL_R_LIBRARY_INIT);
 	return -1;
     }
 #endif
@@ -1237,11 +1237,11 @@ int DANESSL_init(SSL *ssl, const char *sni_domain, const char **hostnames)
 	return 0;
 
     if ((dane = (SSL_DANE *) OPENSSL_malloc(sizeof(SSL_DANE))) == 0) {
-	DANEerr(DANE_F_SSL_DANE_INIT, ERR_R_MALLOC_FAILURE);
+	DANEerr(DANESSL_F_INIT, ERR_R_MALLOC_FAILURE);
 	return 0;
     }
     if (!SSL_set_ex_data(ssl, dane_idx, dane)) {
-	DANEerr(DANE_F_SSL_DANE_INIT, ERR_R_MALLOC_FAILURE);
+	DANEerr(DANESSL_F_INIT, ERR_R_MALLOC_FAILURE);
 	OPENSSL_free(dane);
 	return 0;
     }
@@ -1256,11 +1256,11 @@ int DANESSL_init(SSL *ssl, const char *sni_domain, const char **hostnames)
     dane->multi = 0;			/* Future SSL control interface */
     dane->count = 0;
 
-    for (i = 0; i <= SSL_DANE_USAGE_LAST; ++i)
+    for (i = 0; i <= DANESSL_USAGE_LAST; ++i)
 	dane->selectors[i] = 0;
 
     if (hostnames && (dane->hosts = host_list_init(hostnames)) == 0) {
-	DANEerr(DANE_F_SSL_DANE_INIT, ERR_R_MALLOC_FAILURE);
+	DANEerr(DANESSL_F_INIT, ERR_R_MALLOC_FAILURE);
 	DANESSL_cleanup(ssl);
 	return 0;
     }
@@ -1274,7 +1274,7 @@ int DANESSL_CTX_init(SSL_CTX *ctx)
 	SSL_CTX_set_cert_verify_callback(ctx, verify_cert, 0);
 	return 1;
     }
-    DANEerr(DANE_F_SSL_CTX_DANE_INIT, DANE_R_LIBRARY_INIT);
+    DANEerr(DANESSL_F_CTX_INIT, DANESSL_R_LIBRARY_INIT);
     return -1;
 }
 
@@ -1351,7 +1351,7 @@ int DANESSL_library_init(void)
     if (dane_idx >= 0 && EVP_get_digestbyname(LN_sha256) != 0)
 	return 1;
 #endif
-    DANEerr(DANE_F_SSL_DANE_LIBRARY_INIT, DANE_R_DANE_SUPPORT);
+    DANEerr(DANESSL_F_LIBRARY_INIT, DANESSL_R_SUPPORT);
     return 0;
 }
 
