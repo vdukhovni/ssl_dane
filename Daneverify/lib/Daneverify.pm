@@ -1,4 +1,4 @@
-package Daneverify;
+package Danessl;
 
 use 5.012005;
 use strict;
@@ -14,7 +14,7 @@ our @ISA = qw(Exporter);
 # names by default without a very good reason. Use EXPORT_OK instead.
 # Do not simply export all your public functions/methods/constants.
 
-# This allows declaration	use Daneverify ':all';
+# This allows declaration	use Danessl ':all';
 # If you do not need this, moving things directly into @EXPORT or @EXPORT_OK
 # will save memory.
 our %EXPORT_TAGS = ( 'all' => [ qw(
@@ -52,7 +52,7 @@ sub AUTOLOAD {
     my $constname;
     our $AUTOLOAD;
     ($constname = $AUTOLOAD) =~ s/.*:://;
-    croak "&Daneverify::constant not defined" if $constname eq 'constant';
+    croak "&Danessl::constant not defined" if $constname eq 'constant';
     my ($error, $val) = constant($constname);
     if ($error) { croak $error; }
     {
@@ -69,7 +69,7 @@ sub AUTOLOAD {
 }
 
 require XSLoader;
-XSLoader::load('Daneverify', $VERSION);
+XSLoader::load('Danessl', $VERSION);
 
 # Preloaded methods go here.
 
@@ -81,16 +81,16 @@ __END__
 
 =head1 NAME
 
-Daneverify - Perl extension for blah blah blah
+Danessl - Perl extension for blah blah blah
 
 =head1 SYNOPSIS
 
-  use Daneverify;
+  use Danessl;
   blah blah blah
 
 =head1 DESCRIPTION
 
-Stub documentation for Daneverify, created by h2xs. It looks like the
+Stub documentation for Danessl, created by h2xs. It looks like the
 author of the extension was negligent enough to leave the stub
 unedited.
 

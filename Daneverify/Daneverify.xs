@@ -6,7 +6,7 @@
 #include "XSUB.h"
 #include "ppport.h"
 
-#define MY_CXT_KEY "Daneverify::_guts" XS_VERSION
+#define MY_CXT_KEY "Danessl::_guts" XS_VERSION
 
 #include <string.h>
 #include <openssl/engine.h>
@@ -241,7 +241,7 @@ typedef struct {
 } my_cxt_t;
 START_MY_CXT
 
-MODULE = Daneverify PACKAGE = Daneverify PREFIX = DANESSL_
+MODULE = Danessl PACKAGE = Danessl PREFIX = DANESSL_
 
 PROTOTYPES: ENABLE
 
@@ -280,7 +280,7 @@ constant(sv)
         switch (type) {
         case PERL_constant_NOTFOUND:
           sv =
-	    sv_2mortal(newSVpvf("%s is not a valid Daneverify macro", s));
+	    sv_2mortal(newSVpvf("%s is not a valid Danessl macro", s));
           PUSHs(sv);
           break;
         case PERL_constant_ISIV:
@@ -290,13 +290,13 @@ constant(sv)
           break;
         default:
           sv = sv_2mortal(newSVpvf(
-	    "Unexpected return type %d while processing Daneverify macro %s, used",
+	    "Unexpected return type %d while processing Danessl macro %s, used",
                type, s));
           PUSHs(sv);
         }
 
 void
-chain(uarg, sarg, m, d, ...)
+verify(uarg, sarg, m, d, ...)
 	 const char *uarg
 	 const char *sarg
 	 const char *m
@@ -322,7 +322,7 @@ chain(uarg, sarg, m, d, ...)
 	    char tmp[16];
 
 	    if (c == 0)
-		croak("Daneverify module not initialized\n");
+		croak("Danessl module not initialized\n");
 
 	    if (!uarg || !sarg || !m || !d)
 	    	croak("All TLSA fields must be defined\n");
