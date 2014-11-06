@@ -243,8 +243,6 @@ START_MY_CXT
 
 MODULE = Danessl PACKAGE = Danessl PREFIX = DANESSL_
 
-PROTOTYPES: ENABLE
-
 BOOT:
 {
     SSL_CTX *c;
@@ -294,6 +292,9 @@ constant(sv)
                type, s));
           PUSHs(sv);
         }
+
+# Allow verify(@tlsa, ..., @hostnames) to expand to multiple arguments
+PROTOTYPES: DISABLE
 
 void
 verify(uarg, sarg, m, d, ...)
