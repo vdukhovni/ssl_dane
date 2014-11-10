@@ -256,6 +256,10 @@ BOOT:
 
     if ((c = SSL_CTX_new(SSLv23_client_method())) == 0)
 	croak("error allocating SSL_CTX\n");
+    if (! SSL_CTX_set_default_verify_paths(c)) {
+	SSL_CTX_free(c);
+	croak("Error setting default verify paths\n");
+    }
     SSL_CTX_set_verify(c, SSL_VERIFY_NONE, 0);
     if (DANESSL_CTX_init(c) <= 0)
 	croak("error initializing Danessl context\n");
