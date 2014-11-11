@@ -864,7 +864,7 @@ static int verify_chain(X509_STORE_CTX *ctx)
 	while (--chain_length > dane->depth)
 	    X509_free(sk_X509_pop(ctx->chain));
     } else {
-	int n = chain_length;
+	int n = 0;
         X509 *xn = cert;
 
 	/*
@@ -873,11 +873,12 @@ static int verify_chain(X509_STORE_CTX *ctx)
 	 */
 	if (leaf_rrs)
 	    matched = match(leaf_rrs, xn, 0);
-	while (!matched && issuer_rrs && --n >= 0) {
-	    xn = sk_X509_value(ctx->chain, n);
-
-	    if (n > 0 || X509_check_issued(xn, xn) == X509_V_OK)
-		matched = match(issuer_rrs, xn, n);
+	if (issuer_rrs) {
+	    for (n = chain_length-1; !matched && n >= 0; --n) {
+		xn = sk_X509_value(ctx->chain, n);
+		if (n > 0 || X509_check_issued(xn, xn) == X509_V_OK)
+		    matched = match(issuer_rrs, xn, n);
+	    }
 	}
 
 	if (matched < 0) {
