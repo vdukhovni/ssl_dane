@@ -142,17 +142,17 @@ static unsigned char *xtob(const char *hex, size_t *len)
     char h;
 
     if (hlen % 2)
-    	return (0);
+	return (0);
     hlen /= 2;
     if ((data = OPENSSL_malloc(hlen)) == 0)
-    	return data;
+	return data;
     cp = data;
 
 #define convert_if_between(c, low, high, add) \
 	if (c >= low && c <= high) *cp |= c - low + add;
 
     for (h = *hex; h != '\0'; ++cp) {
-    	*cp = 0;
+	*cp = 0;
 	for (i = 0; i < 2; ++i) {
 	    *cp <<= 4;
 	    convert_if_between(h, '0', '9', 0)
@@ -177,6 +177,65 @@ static int add_tlsa(SSL *ssl, int u, int s,
 
     free(data);
     return ret;
+}
+
+static char *tlsa_data(
+	STACK_OF(X509) *xs,
+	int depth,
+	int u,
+	int s,
+	const char *m)
+{
+    const EVP_MD *md;
+    X509 *cert;
+    unsigned char mdbuf[EVP_MAX_MD_SIZE];
+    unsigned char *buf;
+    unsigned char *buf2;
+    unsigned int len;
+    unsigned int len2;
+    char *data;
+
+    if (depth == 0 && (u % 2) == 0)
+	croak("Usage %d invalid at depth 0\n", u);
+    else if (depth != 0 && (u % 2) == 1)
+	croak("Usage %d invalid at depth > 0\n", u);
+
+    if (m && *m && (md = EVP_get_digestbyname(m)) == 0)
+	croak("Unknown digest algorithm: %s\n", m);
+
+    cert = sk_X509_value(xs, depth);
+
+    /*
+     * Extract ASN.1 DER form of certificate or public key.
+     */
+    switch (s) {
+    case DANESSL_SELECTOR_CERT:
+	len = i2d_X509(cert, NULL);
+	buf2 = buf = (unsigned char *) OPENSSL_malloc(len);
+	if (buf)
+	    i2d_X509(cert, &buf2);
+	break;
+    case DANESSL_SELECTOR_SPKI:
+	len = i2d_X509_PUBKEY(X509_get_X509_PUBKEY(cert), NULL);
+	buf2 = buf = (unsigned char *) OPENSSL_malloc(len);
+	if (buf)
+	    i2d_X509_PUBKEY(X509_get_X509_PUBKEY(cert), &buf2);
+	break;
+    }
+
+    if (buf == NULL)
+	croak("Out of memory\n");
+    OPENSSL_assert(buf2 - buf == len);
+
+    if (m && *m) {
+	if (!EVP_Digest(buf, len, mdbuf, &len2, md, 0))
+	    croak("Error computing %s digest\n", m);
+	data = btox(mdbuf, len2);
+    } else {
+	data = btox(buf, len);
+    }
+    OPENSSL_free(buf);
+    return data;
 }
 
 static STACK_OF(X509) *load_chain(const char *chainbuf)
@@ -307,10 +366,10 @@ verify(uarg, sarg, m, d, ...)
 	 const char *m
 	 const char *d
     PREINIT:
-    	dMY_CXT;
+	dMY_CXT;
     PPCODE:
 	dXCPT;
-    	SSL_CTX *c = MY_CXT.ssl_ctx;
+	SSL_CTX *c = MY_CXT.ssl_ctx;
 	SSL *ssl = 0;
 	STACK_OF(X509) *xs = 0;
 	const char *chain = 0;
@@ -330,20 +389,20 @@ verify(uarg, sarg, m, d, ...)
 		croak("Danessl module not initialized\n");
 
 	    if (!uarg || !sarg || !m || !d)
-	    	croak("All TLSA fields must be defined\n");
+		croak("All TLSA fields must be defined\n");
 
 	    u = atoi(uarg);
 	    if (u < 0 || u > 0xFF
 	        || (snprintf(tmp, sizeof(tmp), "%d", u) && strcmp(tmp, uarg) != 0))
-	    	croak("Invalid TLSA certificate usage: %s\n", uarg);
+		croak("Invalid TLSA certificate usage: %s\n", uarg);
 	    s = atoi(sarg);
 	    if (s < 0 || s > 0xFF
 	        || (snprintf(tmp, sizeof(tmp), "%d", s) && strcmp(tmp, sarg) != 0))
-	    	croak("Invalid TLSA selector: %s\n", sarg);
+		croak("Invalid TLSA selector: %s\n", sarg);
 
 	    /* Support built-in standard one-digit mtypes */
-	    if (m[0] && m[1] == '\0') 
-	    	switch (m[0]) {
+	    if (m[0] && m[1] == '\0')
+		switch (m[0]) {
 		    case '0': m = ""; break;
 		    case '1': m = "sha256"; break;
 		    case '2': m = "sha512"; break;
@@ -402,6 +461,113 @@ verify(uarg, sarg, m, d, ...)
 	}
 	if (xs)
 	    sk_X509_pop_free(xs, X509_free);
+
+	XCPT_CATCH
+	{
+	    XCPT_RETHROW;
+	}
+
+void
+tlsagen(chain, dptharg, base, uarg, sarg, m)
+	 const char *chain
+	 const char *dptharg
+	 const char *base
+	 const char *uarg
+	 const char *sarg
+	 const char *m
+    PREINIT:
+	dMY_CXT;
+    PPCODE:
+	dXCPT;
+	SSL_CTX *c = MY_CXT.ssl_ctx;
+	SSL *ssl = 0;
+	STACK_OF(X509) *xs = 0;
+	int u;
+	int s;
+	char *d;
+	int depth;
+	long ok;
+	int i;
+	const char *peernames[2] = { 0, 0 };
+	const char *mhost;
+	int mdepth;
+
+	XCPT_TRY_START {
+	    char tmp[16];
+
+	    if (c == 0)
+		croak("Danessl module not initialized\n");
+
+	    if (!uarg || !sarg || !m)
+		croak("All TLSA parameters must be defined\n");
+
+	    if (! chain)
+		croak("Chain must be defined\n");
+	    xs = load_chain(chain);
+
+	    if (! base)
+		croak("TLSA base domain must be defined\n");
+	    peernames[0] = base;
+
+	    depth = atoi(dptharg);
+	    if (depth < 0 || depth >= sk_X509_num(xs)
+	        || (snprintf(tmp, sizeof(tmp), "%d", depth)
+		    && strcmp(tmp, dptharg) != 0))
+		croak("Invalid chain depth: %s\n", dptharg);
+
+	    u = atoi(uarg);
+	    if (u < 0 || u > 0xFF
+	        || (snprintf(tmp, sizeof(tmp), "%d", u) && strcmp(tmp, uarg) != 0))
+		croak("Invalid TLSA certificate usage: %s\n", uarg);
+
+	    s = atoi(sarg);
+	    if (s < 0 || s > 0xFF
+	        || (snprintf(tmp, sizeof(tmp), "%d", s) && strcmp(tmp, sarg) != 0))
+		croak("Invalid TLSA selector: %s\n", sarg);
+
+	    /* Support built-in standard one-digit mtypes */
+	    if (m[0] && m[1] == '\0')
+		switch (m[0]) {
+		    case '0': m = ""; break;
+		    case '1': m = "sha256"; break;
+		    case '2': m = "sha512"; break;
+		}
+
+	    /* Create a connection handle */
+	    if ((ssl = SSL_new(c)) == 0)
+		croak("error allocating SSL handle\n");
+	    if (DANESSL_init(ssl, base, peernames) <= 0)
+		croak("error initializing DANESSL handle\n");
+
+	    d = tlsa_data(xs, depth, u, s, m);
+
+	    if (!add_tlsa(ssl, u, s, m, d))
+		croak("error processing TLSA RR\n");
+
+	    SSL_set_connect_state(ssl);
+	    ssl_verify_cert_chain(ssl, xs);
+
+	    if (DANESSL_get_match_cert(ssl, 0, &mhost, &mdepth)) {
+		EXTEND(SP, 3);
+		mXPUSHi(mdepth);
+		mXPUSHs(newSVpv(mhost, 0));
+		mXPUSHs(newSVpv(d, 0));
+	    } else {
+		long err = SSL_get_verify_result(ssl);
+		const char *reason = X509_verify_cert_error_string(err);
+		croak("%s: (%ld)\n", reason ? reason : "Verify error code", err);
+	    }
+
+	} XCPT_TRY_END
+
+	if (ssl) {
+	    DANESSL_cleanup(ssl);
+	    SSL_free(ssl);
+	}
+	if (xs)
+	    sk_X509_pop_free(xs, X509_free);
+	if (d)
+	    free(d);
 
 	XCPT_CATCH
 	{
