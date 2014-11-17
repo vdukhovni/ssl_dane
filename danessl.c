@@ -1199,14 +1199,20 @@ int DANESSL_add_tlsa(
     }
 
     /* Find insertion point and don't add duplicate elements. */
-    for (s = dane->selectors[usage]; s; s = s->next)
-	if (s->value->selector == selector)
-	    for (m = s->value->mtype; m; m = m->next)
-		if (m->value->md == md)
+    for (s = dane->selectors[usage]; s; s = s->next) {
+	if (s->value->selector == selector) {
+	    for (m = s->value->mtype; m; m = m->next) {
+		if (m->value->md == md) {
 		    for (d = m->value->data; d; d = d->next)
 			if (d->value->datalen == dlen &&
 			    memcmp(d->value->data, data, dlen) == 0)
 			    xkfreeret(1);
+		    break;
+		}
+	    }
+	    break;
+	}
+    }
 
     if ((d = (DANE_DATA_LIST) list_alloc(sizeof(*d->value) + dlen)) == 0)
 	xkfreeret(0);
