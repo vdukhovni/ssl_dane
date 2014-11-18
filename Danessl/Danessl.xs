@@ -158,7 +158,7 @@ static unsigned char *xtob(const char *hex, size_t *len)
 	    convert_if_between(h, '0', '9', 0)
 	    else convert_if_between(h, 'A', 'F', 10)
 	    else convert_if_between (h, 'a', 'f', 10)
-	    else { free(data); return (0); }
+	    else { OPENSSL_free(data); return (0); }
 	    h = *++hex;
 	}
     }
@@ -175,7 +175,7 @@ static int add_tlsa(SSL *ssl, int u, int s,
     unsigned char *data = xtob(darg, &len);
     int ret = DANESSL_add_tlsa(ssl, u, s, mdname, data, len);
 
-    free(data);
+    OPENSSL_free(data);
     return ret;
 }
 
@@ -567,7 +567,7 @@ tlsagen(chain, dptharg, base, uarg, sarg, m)
 	if (xs)
 	    sk_X509_pop_free(xs, X509_free);
 	if (d)
-	    free(d);
+	    OPENSSL_free(d);
 
 	XCPT_CATCH
 	{
