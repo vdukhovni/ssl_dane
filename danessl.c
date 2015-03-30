@@ -298,7 +298,7 @@ static int set_serial(X509 *cert, AUTHORITY_KEYID *akid, X509 *subject)
 static int add_akid(X509 *cert, AUTHORITY_KEYID *akid)
 {
     int nid = NID_authority_key_identifier;
-    ASN1_STRING *id;
+    ASN1_OCTET_STRING *id;
     unsigned char c = 0;
     int ret = 0;
 
@@ -309,13 +309,13 @@ static int add_akid(X509 *cert, AUTHORITY_KEYID *akid)
      * exempt from any potential (off by default for now in OpenSSL)
      * self-signature checks!
      */
-    id = (ASN1_STRING *) ((akid && akid->keyid) ? akid->keyid : 0);
-    if (id && M_ASN1_STRING_length(id) == 1 && *M_ASN1_STRING_data(id) == c)
+    id =  (akid && akid->keyid) ? akid->keyid : 0;
+    if (id && ASN1_STRING_length(id) == 1 && *ASN1_STRING_data(id) == c)
 	c = 1;
 
     if ((akid = AUTHORITY_KEYID_new()) != 0
 	&& (akid->keyid = ASN1_OCTET_STRING_new()) != 0
-	&& M_ASN1_OCTET_STRING_set(akid->keyid, (void *) &c, 1)
+	&& ASN1_OCTET_STRING_set(akid->keyid, (void *) &c, 1)
 	&& X509_add1_ext_i2d(cert, nid, akid, 0, X509V3_ADD_APPEND))
 	ret = 1;
     if (akid)
