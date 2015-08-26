@@ -440,11 +440,12 @@ verify(uarg, sarg, m, d, ...)
 	    if (chain) {
 		xs = load_chain(chain);
 		SSL_set_connect_state(ssl);
-		ssl_verify_cert_chain(ssl, xs);
-		if (DANESSL_get_match_cert(ssl, 0, &mhost, &mdepth)) {
-		    EXTEND(SP, 2);
-		    mXPUSHi(mdepth);
-		    mXPUSHs(newSVpv(mhost, 0));
+		if (ssl_verify_cert_chain(ssl, xs)) {
+		    if (DANESSL_get_match_cert(ssl, 0, &mhost, &mdepth)) {
+			EXTEND(SP, 2);
+			mXPUSHi(mdepth);
+			mXPUSHs(newSVpv(mhost, 0));
+		    }
 		} else {
 		    long err = SSL_get_verify_result(ssl);
 		    const char *reason = X509_verify_cert_error_string(err);
@@ -545,13 +546,14 @@ tlsagen(chain, dptharg, base, uarg, sarg, m)
 		croak("error processing TLSA RR\n");
 
 	    SSL_set_connect_state(ssl);
-	    ssl_verify_cert_chain(ssl, xs);
 
-	    if (DANESSL_get_match_cert(ssl, 0, &mhost, &mdepth)) {
-		EXTEND(SP, 3);
-		mXPUSHi(mdepth);
-		mXPUSHs(newSVpv(mhost, 0));
-		mXPUSHs(newSVpv(d, 0));
+	    if (ssl_verify_cert_chain(ssl, xs)) {
+		if (DANESSL_get_match_cert(ssl, 0, &mhost, &mdepth)) {
+		    EXTEND(SP, 3);
+		    mXPUSHi(mdepth);
+		    mXPUSHs(newSVpv(mhost, 0));
+		    mXPUSHs(newSVpv(d, 0));
+		}
 	    } else {
 		long err = SSL_get_verify_result(ssl);
 		const char *reason = X509_verify_cert_error_string(err);

@@ -983,7 +983,23 @@ static int verify_cert(X509_STORE_CTX *ctx, void *unused_ctx)
     dane->verify = ctx->verify;
     ctx->verify = verify_chain;
 
-    return X509_verify_cert(ctx);
+    if (X509_verify_cert(ctx))
+	return 1;
+
+    /*
+     * If the chain is invalid, clear any matching cert or hostname, to
+     * protect callers that might erroneously rely on these alone without
+     * checking the validation status.
+     */
+    if (dane->match) {
+        X509_free(dane->match);
+	dane->match = 0;
+    }
+    if (dane->mhost) {
+	OPENSSL_free(dane->mhost);
+	dane->mhost = 0;
+    }
+    return 0;
 }
 
 static dane_list list_alloc(size_t vsize)
