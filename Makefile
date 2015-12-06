@@ -23,7 +23,7 @@ ${PROG2}: ${PROG2}.o ${OBJS}
 	$(CC) -o $@ ${PROG2}.o -L. -l${LIB} ${LDFLAGS}
 
 clean:
-	$(RM) ${SHLIB} ${PROG1} ${PROG2} *.o
+	rm -f ${SHLIB} ${PROG1} ${PROG2} *.o
 
 install:
 	cp danessl.h ${PREFIX}/include/
