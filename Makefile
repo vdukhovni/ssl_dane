@@ -1,6 +1,8 @@
-CFLAGS	= -fPIC -Wall -Werror -g
-LDFLAGS	= -lssl -lcrypto
+CFLAGS	= -I${OPENSSL}/include -fPIC -Wall -Werror -g
+LDFLAGS	= -L${OPENSSL}/lib -lssl -lcrypto
 
+OPENSSL = /usr
+PREFIX  = /usr
 LIB	= danessl
 PROG1	= connected
 PROG2 	= offline
@@ -24,5 +26,5 @@ clean:
 	$(RM) ${SHLIB} ${PROG1} ${PROG2} *.o
 
 install:
-	cp danessl.h /usr/include/
-	cp ${SHLIB} /usr/lib/
+	cp danessl.h ${PREFIX}/include/
+	cp ${SHLIB} ${PREFIX}/lib/

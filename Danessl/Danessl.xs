@@ -14,6 +14,7 @@
 #include <openssl/pem.h>
 #include <openssl/bio.h>
 #include <openssl/x509.h>
+#include <openssl/err.h>
 #include <danessl.h>
 
 #define PERL_constant_NOTFOUND	1
@@ -74,42 +75,6 @@ constant (pTHX_ const char *name, STRLEN len, IV *iv_return) {
     break;
   }
   return PERL_constant_NOTFOUND;
-}
-
-/* Cut/paste from OpenSSL 1.0.1: ssl/ssl_cert.c */
-
-static int ssl_verify_cert_chain(SSL *s, STACK_OF(X509) *sk)
-{
-    X509 *x;
-    int i;
-    X509_STORE_CTX ctx;
-
-    if ((sk == NULL) || (sk_X509_num(sk) == 0))
-	return(0);
-
-    x=sk_X509_value(sk,0);
-    if(!X509_STORE_CTX_init(&ctx,s->ctx->cert_store,x,sk)) {
-	SSLerr(SSL_F_SSL_VERIFY_CERT_CHAIN,ERR_R_X509_LIB);
-	return(0);
-    }
-    X509_STORE_CTX_set_ex_data(&ctx,SSL_get_ex_data_X509_STORE_CTX_idx(),s);
-
-    X509_STORE_CTX_set_default(&ctx, s->server ? "ssl_client" : "ssl_server");
-    X509_VERIFY_PARAM_set1(X509_STORE_CTX_get0_param(&ctx), s->param);
-
-    if (s->verify_callback)
-	X509_STORE_CTX_set_verify_cb(&ctx, s->verify_callback);
-
-    if (s->ctx->app_verify_callback != NULL)
-	i=s->ctx->app_verify_callback(&ctx, s->ctx->app_verify_arg);
-    else {
-	i=X509_verify_cert(&ctx);
-    }
-
-    s->verify_result=ctx.error;
-    X509_STORE_CTX_cleanup(&ctx);
-
-    return(i);
 }
 
 static char *btox(unsigned char *data, size_t len)
@@ -440,7 +405,8 @@ verify(uarg, sarg, m, d, ...)
 	    if (chain) {
 		xs = load_chain(chain);
 		SSL_set_connect_state(ssl);
-		if (ssl_verify_cert_chain(ssl, xs)) {
+		if (DANESSL_verify_chain(ssl, xs) != 0
+                    && SSL_get_verify_result(ssl) == X509_V_OK) {
 		    if (DANESSL_get_match_cert(ssl, 0, &mhost, &mdepth)) {
 			EXTEND(SP, 2);
 			mXPUSHi(mdepth);
@@ -546,8 +512,8 @@ tlsagen(chain, dptharg, base, uarg, sarg, m)
 		croak("error processing TLSA RR\n");
 
 	    SSL_set_connect_state(ssl);
-
-	    if (ssl_verify_cert_chain(ssl, xs)) {
+	    if (DANESSL_verify_chain(ssl, xs) != 0
+                && SSL_get_verify_result(ssl) == X509_V_OK) {
 		if (DANESSL_get_match_cert(ssl, 0, &mhost, &mdepth)) {
 		    EXTEND(SP, 3);
 		    mXPUSHi(mdepth);

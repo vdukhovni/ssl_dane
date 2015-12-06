@@ -14,10 +14,9 @@ BEGIN { use_ok('Danessl') };
 
 my $fail = 0;
 foreach my $constname (qw(
-	SSL_DANE_SELECTOR_CERT SSL_DANE_SELECTOR_LAST SSL_DANE_SELECTOR_SPKI
-	SSL_DANE_USAGE_FIXED_LEAF SSL_DANE_USAGE_LAST
-	SSL_DANE_USAGE_LIMIT_ISSUER SSL_DANE_USAGE_LIMIT_LEAF
-	SSL_DANE_USAGE_TRUSTED_CA)) {
+        USAGE_PKIX_TA USAGE_PKIX_EE USAGE_DANE_TA USAGE_DANE_EE
+        SELECTOR_CERT SELECTOR_SPKI
+        MATCHING_FULL MATCHING_2256 MATCHING_2512)) {
   next if (eval "my \$a = $constname; 1");
   if ($@ =~ /^Your vendor has not defined Danessl macro $constname/) {
     print "# pass: $@";

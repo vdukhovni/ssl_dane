@@ -50,8 +50,8 @@ genroot() {
     local akid=$1; shift
 
     exts=$(printf "%s\n%s\n%s\n" "$skid" "$akid" "basicConstraints = CA:true")
-    req "$key" "$cn" |
-    	cert "$cert" "$exts" -signkey "${key}.pem" -set_serial 1 -days 30
+    csr=$(req "$key" "$cn")
+    echo "$csr" | cert "$cert" "$exts" -signkey "${key}.pem" -set_serial 1 -days 30
 }
 
 genca() {
@@ -64,8 +64,8 @@ genca() {
     local cakey=$1; shift
 
     exts=$(printf "%s\n%s\n%s\n" "$skid" "$akid" "basicConstraints = CA:true")
-    req "$key" "$cn" |
-    	cert "$cert" "$exts" -CA "${ca}.pem" -CAkey "${cakey}.pem" \
+    csr=$(req "$key" "$cn")
+    echo "$csr" | cert "$cert" "$exts" -CA "${ca}.pem" -CAkey "${cakey}.pem" \
 	    -set_serial 2 -days 30 "$@"
 }
 
@@ -82,8 +82,9 @@ genee() {
 	    "basicConstraints = CA:false" \
 	    "extendedKeyUsage = serverAuth" \
 	    "subjectAltName = @alts" "DNS=${cn}")
-    req "$key" "$cn" |
-    	cert "$cert" "$exts" -CA "${ca}.pem" -CAkey "${cakey}.pem" \
+    csr=$(req "$key" "$cn")
+    echo "$csr" |
+	cert "$cert" "$exts" -CA "${ca}.pem" -CAkey "${cakey}.pem" \
 	    -set_serial 2 -days 30 "$@"
 }
 
@@ -98,15 +99,16 @@ genss() {
 	    "basicConstraints = CA:true" \
 	    "extendedKeyUsage = serverAuth" \
 	    "subjectAltName = @alts" "DNS=${cn}")
-    req "$key" "$cn" |
-	cert "$cert" "$exts" -set_serial 1 -days 30 -signkey "${key}.pem" "$@"
+    csr=$(req "$key" "$cn")
+    echo "$csr" | cert "$cert" "$exts" -set_serial 1 -days 30 -signkey "${key}.pem" "$@"
 }
 
 gennocn() {
     local key=$1; shift
     local cert=$1; shift
 
-    req_nocn "$key" |
+    csr=$(req_nocn "$key")
+    echo "$csr" |
 	cert "$cert" "" -signkey "${key}.pem" -set_serial 1 -days -1 "$@"
 }
 
@@ -131,7 +133,7 @@ runtest() {
 
     if [ -n "$ca" ]; then ca="$ca.pem"; fi
     "$TEST" "$usage" "$selector" "$digest" "$tlsa.pem" "$ca" "$chain.pem" \
-    	"$@" > /dev/null
+	"$@" > /dev/null
 }
 
 checkpass() { runtest "$@" && { echo pass; } || { echo fail; exit 1; }; }
@@ -220,13 +222,13 @@ for s in 0 1; do
     #
     checkpass "valid EE" 1 "$s" "$m" eecert rootcert chain1 "$HOST"
     checkpass "sub-domain match" 1 "$s" "$m" eecert rootcert chain1 \
-    	whatever ".$DOMAIN"
+	whatever ".$DOMAIN"
     checkfail "wrong name" 1 "$s" "$m" eecert rootcert chain1 whatever
     checkfail "null CA" 1 "$s" "$m" eecert "" chain1 "$HOST"
     checkfail "non-root CA" 1 "$s" "$m" eecert cacert1 chain1 "$HOST"
     checkpass "depth 0 ss-CA EE" 1 "$s" "$m" sscert sscert sscert "${HOST}" 
     checkfail "depth 0 ss-CA EE namecheck" 1 "$s" "$m" sscert sscert sscert \
-    	whatever
+	whatever
 
     # Usage 3 tests:
     #

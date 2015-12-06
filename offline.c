@@ -2,70 +2,23 @@
  *  Author: Viktor Dukhovni
  *  License: THIS CODE IS IN THE PUBLIC DOMAIN.
  */
+
+#include <stdio.h>
+#include <stdlib.h>
+
 #include <unistd.h>
 #include <stdarg.h>
+#include <string.h>
 
 #include <openssl/engine.h>
 #include <openssl/conf.h>
 #include <openssl/pem.h>
 #include <openssl/bio.h>
 #include <openssl/x509.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 #include "danessl.h"
-
-/* Cut/paste from OpenSSL 1.0.1: ssl/ssl_cert.c */
-
-static int ssl_verify_cert_chain(SSL *s, STACK_OF(X509) *sk)
-{
-    X509 *x;
-    int i;
-    X509_STORE_CTX ctx;
-
-    if ((sk == NULL) || (sk_X509_num(sk) == 0))
-	return(0);
-
-    x=sk_X509_value(sk,0);
-    if(!X509_STORE_CTX_init(&ctx,s->ctx->cert_store,x,sk)) {
-	SSLerr(SSL_F_SSL_VERIFY_CERT_CHAIN,ERR_R_X509_LIB);
-	return(0);
-    }
-    X509_STORE_CTX_set_ex_data(&ctx,SSL_get_ex_data_X509_STORE_CTX_idx(),s);
-
-    /* We need to inherit the verify parameters. These can be determined by
-     * the context: if its a server it will verify SSL client certificates
-     * or vice versa.
-     */
-
-    X509_STORE_CTX_set_default(&ctx, s->server ? "ssl_client" : "ssl_server");
-    /* Anything non-default in "param" should overwrite anything in the
-     * ctx.
-     */
-    X509_VERIFY_PARAM_set1(X509_STORE_CTX_get0_param(&ctx), s->param);
-
-    if (s->verify_callback)
-	X509_STORE_CTX_set_verify_cb(&ctx, s->verify_callback);
-
-    if (s->ctx->app_verify_callback != NULL)
-#if 1 /* new with OpenSSL 0.9.7 */
-	i=s->ctx->app_verify_callback(&ctx, s->ctx->app_verify_arg);
-#else
-	i=s->ctx->app_verify_callback(&ctx); /* should pass app_verify_arg */
-#endif
-    else {
-#ifndef OPENSSL_NO_X509_VERIFY
-	i=X509_verify_cert(&ctx);
-#else
-	i=0;
-	ctx.error=X509_V_ERR_APPLICATION_VERIFICATION;
-	SSLerr(SSL_F_SSL_VERIFY_CERT_CHAIN,SSL_R_NO_VERIFY_CALLBACK);
-#endif
-    }
-
-    s->verify_result=ctx.error;
-    X509_STORE_CTX_cleanup(&ctx);
-
-    return(i);
-}
 
 static void print_errors(void)
 {
@@ -83,6 +36,19 @@ static void print_errors(void)
 	else
 	    fprintf(stderr, "Error: %s:%s:%d\n", buffer, file, line);
     }
+}
+
+static void fatal(const char *fmt, ...)
+{
+    va_list ap;
+
+    va_start(ap, fmt);
+    fprintf(stderr, "Fatal: ");
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+
+    print_errors();
+    exit(1);
 }
 
 static int add_tlsa(SSL *ssl, const char *argv[])
@@ -267,19 +233,6 @@ static void usage(const char *progname)
     exit(1);
 }
 
-static void fatal(const char *fmt, ...)
-{
-    va_list ap;
-
-    va_start(ap, fmt);
-    fprintf(stderr, "Fatal: ");
-    vfprintf(stderr, fmt, ap);
-    va_end(ap);
-
-    print_errors();
-    exit(1);
-}
-
 int main(int argc, const char *argv[])
 {
     STACK_OF(X509) *chain;
@@ -316,7 +269,7 @@ int main(int argc, const char *argv[])
     /* Verify saved server chain */
     chain = load_chain(argv[6]);
     SSL_set_connect_state(ssl);
-    ssl_verify_cert_chain(ssl, chain);
+    DANESSL_verify_chain(ssl, chain);
     print_errors();
     printf("verify status: %ld\n", ok = SSL_get_verify_result(ssl));
 

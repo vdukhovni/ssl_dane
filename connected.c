@@ -7,11 +7,14 @@
 #include <netdb.h>
 #include <unistd.h>
 #include <stdarg.h>
+#include <string.h>
 
 #include <openssl/engine.h>
 #include <openssl/conf.h>
 #include <openssl/pem.h>
 #include <openssl/bio.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 #include "danessl.h"
 
