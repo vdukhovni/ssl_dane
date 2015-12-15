@@ -874,7 +874,7 @@ static int verify_chain(X509_STORE_CTX *ctx)
 	 */
 	if (leaf_rrs)
 	    matched = match(leaf_rrs, xn, 0);
-	if (issuer_rrs) {
+	if (!matched && issuer_rrs) {
 	    for (n = chain_length-1; !matched && n >= 0; --n) {
 		xn = sk_X509_value(ctx->chain, n);
 		if (n > 0 || X509_check_issued(xn, xn) == X509_V_OK)
