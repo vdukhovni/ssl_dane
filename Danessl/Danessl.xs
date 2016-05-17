@@ -9,6 +9,7 @@
 #define MY_CXT_KEY "Danessl::_guts" XS_VERSION
 
 #include <string.h>
+#include <openssl/opensslv.h>
 #include <openssl/engine.h>
 #include <openssl/conf.h>
 #include <openssl/pem.h>
@@ -263,6 +264,7 @@ static STACK_OF(X509) *load_chain(const char *chainbuf)
 typedef struct {
     SSL_CTX *ssl_ctx;
 } my_cxt_t;
+
 START_MY_CXT
 
 MODULE = Danessl PACKAGE = Danessl PREFIX = DANESSL_
@@ -271,13 +273,12 @@ BOOT:
 {
     SSL_CTX *c;
     MY_CXT_INIT;
-
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L)
     SSL_load_error_strings();
     SSL_library_init();
-
+#endif
     if (DANESSL_library_init() <= 0)
 	croak("Error initializing Danessl library\n");
-
     if ((c = SSL_CTX_new(SSLv23_client_method())) == 0)
 	croak("error allocating SSL_CTX\n");
     if (! SSL_CTX_set_default_verify_paths(c)) {
@@ -287,7 +288,6 @@ BOOT:
     SSL_CTX_set_verify(c, SSL_VERIFY_NONE, 0);
     if (DANESSL_CTX_init(c) <= 0)
 	croak("error initializing Danessl context\n");
-
     MY_CXT.ssl_ctx = c;
 }
 

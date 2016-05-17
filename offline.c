@@ -244,8 +244,11 @@ int main(int argc, const char *argv[])
 	usage(argv[0]);
 
     /* SSL library and DANE library initialization */
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
     SSL_load_error_strings();
     SSL_library_init();
+#endif
+
     if (DANESSL_library_init() <= 0)
 	fatal("error initializing DANE library\n");
 
@@ -277,13 +280,6 @@ int main(int argc, const char *argv[])
     DANESSL_cleanup(ssl);
     SSL_free(ssl);
     SSL_CTX_free(sctx);
-
-    /* Attempt to release OpenSSL memory resources. */
-    EVP_cleanup();
-    ENGINE_cleanup();
-    CONF_modules_unload(1);
-    ERR_free_strings();
-    CRYPTO_cleanup_all_ex_data();
 
     return ok == X509_V_OK ? 0 : 1;
 }
