@@ -33,6 +33,9 @@
 #define X509_STORE_CTX_set_verify(ctx, v) ((ctx)->verify = v)
 #define X509_STORE_CTX_set_error_depth(ctx, d) ((ctx)->error_depth = d)
 #define X509_STORE_CTX_set_current_cert(ctx, x) ((ctx)->current_cert = x)
+#define ASN1_STRING_get0_data ASN1_STRING_data
+#define X509_getm_notBefore X509_get_notBefore
+#define X509_getm_notAfter X509_get_notAfter
 #define CRYPTO_ONCE_STATIC_INIT 0
 #define CRYPTO_THREAD_run_once run_once
 typedef int CRYPTO_ONCE;
@@ -326,7 +329,7 @@ static int add_akid(X509 *cert, AUTHORITY_KEYID *akid)
      * self-signature checks!
      */
     id =  (akid && akid->keyid) ? akid->keyid : 0;
-    if (id && ASN1_STRING_length(id) == 1 && *ASN1_STRING_data(id) == c)
+    if (id && ASN1_STRING_length(id) == 1 && *ASN1_STRING_get0_data(id) == c)
 	c = 1;
 
     if ((akid = AUTHORITY_KEYID_new()) != 0
@@ -452,10 +455,10 @@ static int wrap_issuer(
      */
     if (!X509_set_version(cert, 2)
 	|| !set_serial(cert, akid, subject)
-	|| !X509_set_subject_name(cert, name)
 	|| !set_issuer_name(cert, akid)
-	|| !X509_gmtime_adj(X509_get_notBefore(cert), -30 * 86400L)
-	|| !X509_gmtime_adj(X509_get_notAfter(cert), 30 * 86400L)
+	|| !X509_gmtime_adj(X509_getm_notBefore(cert), -30 * 86400L)
+	|| !X509_gmtime_adj(X509_getm_notAfter(cert), 30 * 86400L)
+	|| !X509_set_subject_name(cert, name)
 	|| !X509_set_pubkey(cert, newkey)
 	|| !add_ext(0, cert, NID_basic_constraints, "CA:TRUE")
 	|| (!top && !add_akid(cert, akid))
@@ -724,9 +727,9 @@ static int match_name(const char *certid, DANESSL *dane)
     return 0;
 }
 
-static char *check_name(char *name, int len)
+static const char *check_name(const char *name, int len)
 {
-    register char *cp = name + len;
+    register const char *cp = name + len;
 
     while (len > 0 && *--cp == 0)
 	--len;				/* Ignore trailing NULs */
@@ -746,13 +749,13 @@ static char *check_name(char *name, int len)
     return name;
 }
 
-static char *parse_dns_name(const GENERAL_NAME *gn)
+static const char *parse_dns_name(const GENERAL_NAME *gn)
 {
     if (gn->type != GEN_DNS)
 	return 0;
     if (ASN1_STRING_type(gn->d.ia5) != V_ASN1_IA5STRING)
 	return 0;
-    return check_name((char *) ASN1_STRING_data(gn->d.ia5),
+    return check_name((const char *)ASN1_STRING_get0_data(gn->d.ia5),
 		      ASN1_STRING_length(gn->d.ia5));
 }
 
