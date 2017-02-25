@@ -617,7 +617,7 @@ static int set_trust_anchor(X509_STORE_CTX *ctx, DANESSL *dane, X509 *cert)
 	if ((matched = match(dane->selectors[DANESSL_USAGE_DANE_TA], ca,
 			     depth + 1)) == 0) {
 	    if (grow_chain(dane, UNTRUSTED, ca)) {
-		if (!X509_check_issued(ca, ca) == X509_V_OK) {
+		if (X509_check_issued(ca, ca) != X509_V_OK) {
 		    /* Restart with issuer as subject */
 		    cert = ca;
 		    continue;
