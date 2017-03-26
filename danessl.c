@@ -984,6 +984,16 @@ int verify_cert(X509_STORE_CTX *ctx, void *unused_ctx)
 	    X509_STORE_CTX_set_error(ctx, X509_V_ERR_OUT_OF_MEM);
 	    return -1;
 	}
+	/* Fail now, if all we have is DANE-EE TLSA records */
+	if (!matched
+	    && !dane->selectors[DANESSL_USAGE_DANE_TA]
+	    && !dane->selectors[DANESSL_USAGE_PKIX_EE]
+	    && !dane->selectors[DANESSL_USAGE_PKIX_TA]) {
+	    X509_STORE_CTX_set_current_cert(ctx, cert);
+	    X509_STORE_CTX_set_error_depth(ctx, 0);
+	    X509_STORE_CTX_set_error(ctx, X509_V_ERR_CERT_UNTRUSTED);
+	    return cb(0, ctx);
+	}
     }
 
     if (dane->selectors[DANESSL_USAGE_DANE_TA]) {
