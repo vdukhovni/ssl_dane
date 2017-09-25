@@ -41,6 +41,11 @@
 typedef int CRYPTO_ONCE;
 #endif
 
+#if OPENSSL_VERSION_NUMBER < 0x1000200fL
+#define SSL_is_server(x) (x->server)
+#define SSL_get0_param(x) (x->param)
+#endif
+
 #include "danessl.h"
 
 #define DANESSL_F_ADD_SKID		100
