@@ -455,10 +455,10 @@ static int wrap_issuer(
      */
     if (!X509_set_version(cert, 2)
 	|| !set_serial(cert, akid, subject)
+	|| !X509_set_subject_name(cert, name)
 	|| !set_issuer_name(cert, akid)
 	|| !X509_gmtime_adj(X509_getm_notBefore(cert), -30 * 86400L)
 	|| !X509_gmtime_adj(X509_getm_notAfter(cert), 30 * 86400L)
-	|| !X509_set_subject_name(cert, name)
 	|| !X509_set_pubkey(cert, newkey)
 	|| !add_ext(0, cert, NID_basic_constraints, "CA:TRUE")
 	|| (!top && !add_akid(cert, akid))
