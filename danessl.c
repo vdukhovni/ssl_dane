@@ -41,6 +41,12 @@
 typedef int CRYPTO_ONCE;
 #endif
 
+#if OPENSSL_VERSION_NUMBER < 0x10002000L
+#warning "OpenSSL 1.0.1 and earlier are EOL, upgrade to 1.0.2 or later"
+#define SSL_is_server(s) ((s)->server)
+#define SSL_get0_param(s) ((s)->param)
+#endif
+
 #include "danessl.h"
 
 #define DANESSL_F_ADD_SKID		100
@@ -367,7 +373,7 @@ static X509_NAME *akid_issuer_name(AUTHORITY_KEYID *akid)
     return 0;
 }
 
-static int set_issuer_name(X509 *cert, AUTHORITY_KEYID *akid)
+static int set_issuer_name(X509 *cert, AUTHORITY_KEYID *akid, X509_NAME *subj)
 {
     X509_NAME *name = akid_issuer_name(akid);
 
@@ -377,7 +383,7 @@ static int set_issuer_name(X509 *cert, AUTHORITY_KEYID *akid)
      */
     if (name)
 	return X509_set_issuer_name(cert, name);
-    return X509_set_issuer_name(cert, X509_get_subject_name(cert));
+    return X509_set_issuer_name(cert, subj);
 }
 
 static int grow_chain(DANESSL *dane, int trusted, X509 *cert)
@@ -455,7 +461,7 @@ static int wrap_issuer(
      */
     if (!X509_set_version(cert, 2)
 	|| !set_serial(cert, akid, subject)
-	|| !set_issuer_name(cert, akid)
+	|| !set_issuer_name(cert, akid, name)
 	|| !X509_gmtime_adj(X509_getm_notBefore(cert), -30 * 86400L)
 	|| !X509_gmtime_adj(X509_getm_notAfter(cert), 30 * 86400L)
 	|| !X509_set_subject_name(cert, name)
