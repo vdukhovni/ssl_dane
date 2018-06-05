@@ -282,8 +282,10 @@ static int match(DANE_SELECTOR_LIST slist, X509 *cert, int depth)
 static int push_ext(X509 *cert, X509_EXTENSION *ext)
 {
     if (ext) {
-	if (X509_add_ext(cert, ext, -1))
+	if (X509_add_ext(cert, ext, -1)) {
+	    X509_EXTENSION_free(ext);
 	    return 1;
+	}
 	X509_EXTENSION_free(ext);
     }
     DANEerr(DANESSL_F_PUSH_EXT, ERR_R_MALLOC_FAILURE);
@@ -636,7 +638,8 @@ static int set_trust_anchor(X509_STORE_CTX *ctx, DANESSL *dane, X509 *cert)
 	    if (!wrap_cert(dane, ca, depth))
 		matched = -1;
 	} else if (matched == MATCHED_PKEY) {
-	    if ((takey = X509_get_pubkey(ca)) == 0 ||
+	    takey = X509_get_pubkey(ca);
+	    if (takey == 0 ||
 		!wrap_issuer(dane, takey, cert, depth, WRAP_MID)) {
 		if (takey)
 		    EVP_PKEY_free(takey);
@@ -644,6 +647,8 @@ static int set_trust_anchor(X509_STORE_CTX *ctx, DANESSL *dane, X509 *cert)
 		    DANEerr(DANESSL_F_SET_TRUST_ANCHOR, ERR_R_MALLOC_FAILURE);
 		matched = -1;
 	    }
+	    if (takey)
+		EVP_PKEY_free(takey);
 	}
 	break;
     }
