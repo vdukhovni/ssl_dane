@@ -41,6 +41,7 @@ extern int DANESSL_init(SSL *, const char *, const char **);
 extern void DANESSL_cleanup(SSL *);
 extern int DANESSL_add_tlsa(SSL *, uint8_t, uint8_t, const char *,
 			    unsigned const char *, size_t);
+extern int DANESSL_add_host(SSL *, const char*);
 extern int DANESSL_get_match_cert(SSL *, X509 **, const char **, int *);
 extern int DANESSL_verify_chain(SSL *, STACK_OF(X509) *);
 

@@ -20,6 +20,10 @@
 #error "OpenSSL 1.0.0 or higher required"
 #endif
 
+#if defined(_WIN32)
+  #define strcasecmp _stricmp
+#endif
+
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
 #define X509_up_ref(x) CRYPTO_add(&((x)->references), 1, CRYPTO_LOCK_X509)
 #define X509_STORE_CTX_get0_cert(ctx) ((ctx)->cert)
@@ -63,6 +67,7 @@ typedef int CRYPTO_ONCE;
 #define DANESSL_F_SET_TRUST_ANCHOR	110
 #define DANESSL_F_VERIFY_CERT		111
 #define DANESSL_F_WRAP_CERT		112
+#define DANESSL_F_ADD_HOST		113
 
 #define DANESSL_R_BAD_CERT		100
 #define DANESSL_R_BAD_CERT_PKEY		101
@@ -95,6 +100,7 @@ static ERR_STRING_DATA dane_str_functs[] = {
     {DANESSL_F_SET_TRUST_ANCHOR,	"set_trust_anchor"},
     {DANESSL_F_VERIFY_CERT,		"verify_cert"},
     {DANESSL_F_WRAP_CERT,		"wrap_cert"},
+    {DANESSL_F_ADD_HOST,		"DANESSL_add_host"},
     {0,					NULL}
 };
 static ERR_STRING_DATA dane_str_reasons[] = {
@@ -1186,6 +1192,35 @@ int DANESSL_verify_chain(SSL *ssl, STACK_OF(X509) *chain)
     return (ret);
 }
 
+int DANESSL_add_host(
+	SSL *ssl,
+	const char *hostname
+)
+{
+    DANESSL *dane;
+    DANE_HOST_LIST elem;
+
+    if (dane_idx < 0 || (dane = SSL_get_ex_data(ssl, dane_idx)) == 0) {
+	DANEerr(DANESSL_F_ADD_HOST, DANESSL_R_INIT);
+	return -1;
+    }
+
+    elem = (DANE_HOST_LIST) OPENSSL_malloc(sizeof(*elem));
+    if (elem == 0) {
+	DANEerr(DANESSL_F_ADD_HOST, ERR_R_MALLOC_FAILURE);
+	return 0;
+    }
+
+    elem->value = OPENSSL_strdup(hostname);
+    if (elem->value == 0) {
+	OPENSSL_free(elem);
+	DANEerr(DANESSL_F_ADD_HOST, ERR_R_MALLOC_FAILURE);
+	return 0;
+    }
+
+    LINSERT(dane->hosts, elem);
+    return 1;
+}
 
 int DANESSL_add_tlsa(
 	SSL *ssl,
